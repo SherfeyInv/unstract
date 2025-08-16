@@ -19,6 +19,7 @@ import { CustomTools } from "../pages/CustomTools.jsx";
 import { CustomToolsHelper } from "../components/helpers/custom-tools/CustomToolsHelper.js";
 import { ToolIdePage } from "../pages/ToolIdePage.jsx";
 import { OutputAnalyzerPage } from "../pages/OutputAnalyzerPage.jsx";
+import { LogsPage } from "../pages/LogsPage.jsx";
 import { deploymentTypes } from "../helpers/GetStaticData.js";
 
 let RequirePlatformAdmin;
@@ -32,6 +33,10 @@ let PRODUCT_NAMES = {};
 let ManualReviewPage;
 let SimpleManualReviewPage;
 let ReviewLayout;
+let Manage;
+let UnstractUsagePage;
+let UnstractSubscriptionPage;
+let UnstractSubscriptionCheck;
 
 try {
   RequirePlatformAdmin =
@@ -62,7 +67,7 @@ try {
 
 try {
   OnboardProduct =
-    require("../plugins/llm-whisperer/components/onboard-product/OnboardProduct.jsx").OnboardProduct;
+    require("../plugins/onboard-product/OnboardProduct.jsx").OnboardProduct;
   PRODUCT_NAMES = require("../plugins/llm-whisperer/helper.js").PRODUCT_NAMES;
 } catch (err) {
   // Do nothing.
@@ -75,6 +80,18 @@ try {
     require("../plugins/manual-review/review-layout/ReviewLayout.jsx").ReviewLayout;
   SimpleManualReviewPage =
     require("../plugins/manual-review/page/simple/SimpleManualReviewPage.jsx").SimpleManualReviewPage;
+  Manage = require("../plugins/manual-review/page/manage/Manage.jsx").Manage;
+} catch (err) {
+  // Do nothing, Not-found Page will be triggered.
+}
+
+try {
+  UnstractSubscriptionPage =
+    require("../plugins/unstract-subscription/pages/UnstractSubscriptionPage.jsx").UnstractSubscriptionPage;
+  UnstractUsagePage =
+    require("../plugins/unstract-subscription/pages/UnstractUsagePage.jsx").UnstractUsagePage;
+  UnstractSubscriptionCheck =
+    require("../plugins/unstract-subscription/components/UnstractSubscriptionCheck.jsx").UnstractSubscriptionCheck;
 } catch (err) {
   // Do nothing, Not-found Page will be triggered.
 }
@@ -91,6 +108,14 @@ function useMainAppRoutes() {
         </Route>
       )}
       <Route path=":orgName" element={<PageLayout />}>
+        {UnstractUsagePage && (
+          <Route path="dashboard" element={<UnstractUsagePage />} />
+        )}
+        {UnstractSubscriptionPage && (
+          <Route element={<RequireAdmin />}>
+            <Route path="pricing" element={<UnstractSubscriptionPage />} />
+          </Route>
+        )}
         <Route path="profile" element={<ProfilePage />} />
         <Route
           path="api"
@@ -119,6 +144,8 @@ function useMainAppRoutes() {
             element={<OutputAnalyzerPage />}
           />
         </Route>
+        <Route path="logs" element={<LogsPage />} />
+        <Route path="logs/:type/:id/" element={<LogsPage />} />
         <Route
           path="settings/llms"
           element={<ToolsSettingsPage type="llm" />}
@@ -159,14 +186,18 @@ function useMainAppRoutes() {
             path="review"
             element={<ManualReviewPage type="review" />}
           ></Route>
-          <Route
-            path="simple_review/review"
-            element={<SimpleManualReviewPage type="simple_review" />}
-          ></Route>
-          <Route
-            path="simple_review/approve"
-            element={<SimpleManualReviewPage type="simple_approve" />}
-          ></Route>
+          {SimpleManualReviewPage && (
+            <>
+              <Route
+                path="simple_review/review"
+                element={<SimpleManualReviewPage type="simple_review" />}
+              ></Route>
+              <Route
+                path="simple_review/approve"
+                element={<SimpleManualReviewPage type="simple_approve" />}
+              ></Route>
+            </>
+          )}
           <Route
             path="review/download_and_sync"
             element={<ManualReviewPage type="download" />}
@@ -175,6 +206,7 @@ function useMainAppRoutes() {
             path="review/approve"
             element={<ManualReviewPage type="approve" />}
           />
+          {Manage && <Route path="review/manage" element={<Manage />} />}
         </Route>
       )}
     </>
@@ -186,7 +218,9 @@ function useMainAppRoutes() {
         path=""
         element={<OnboardProduct type={PRODUCT_NAMES?.unstract} />}
       >
-        {routes}
+        <Route path="" element={<UnstractSubscriptionCheck />}>
+          {routes}
+        </Route>
       </Route>
     );
   } else {

@@ -1,16 +1,16 @@
 import json
 import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 import redis
 from cryptography.fernet import Fernet, InvalidToken
-from flask import Blueprint, Request
+from flask import Blueprint, Request, jsonify, make_response, request
 from flask import current_app as app
-from flask import jsonify, make_response, request
+
+from unstract.core.flask.exceptions import APIError
 from unstract.platform_service.constants import DBTable
 from unstract.platform_service.env import Env
-from unstract.platform_service.exceptions import APIError
 from unstract.platform_service.extensions import db
 from unstract.platform_service.helper.adapter_instance import (
     AdapterInstanceRequestHelper,
@@ -45,7 +45,7 @@ def authentication_middleware(func: Any) -> Any:
     return wrapper
 
 
-def get_organization_from_bearer_token(token: str) -> tuple[Optional[int], str]:
+def get_organization_from_bearer_token(token: str) -> tuple[int | None, str]:
     """Fetch organization by platform key.
 
     Args:
@@ -76,7 +76,7 @@ def execute_query(query: str, params: tuple = ()) -> Any:
     return result_row[0]
 
 
-def validate_bearer_token(token: Optional[str]) -> bool:
+def validate_bearer_token(token: str | None) -> bool:
     try:
         if token is None:
             app.logger.error("Authentication failed. Empty bearer token")
@@ -124,7 +124,7 @@ def page_usage() -> Any:
         "error": "",
         "unique_id": "",
     }
-    payload: Optional[dict[Any, Any]] = request.json
+    payload: dict[Any, Any] | None = request.json
     if not payload:
         result["error"] = Env.INVALID_PAYLOAD
         return make_response(result, 400)
@@ -157,12 +157,86 @@ def page_usage() -> Any:
     )
 
     try:
-        with db.atomic() as transaction:
+        with db.atomic():
             db.execute_sql(query, params)
-            transaction.commit()
             app.logger.info("Page usage recorded with id %s for %s", usage_id, org_id)
             result["status"] = "OK"
             result["unique_id"] = usage_id
+
+            # Check if the subscription_usage table exists
+            check_table_query = f"""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_schema = '{Env.DB_SCHEMA}'
+                    AND table_name = '{DBTable.SUBSCRIPTION_USAGE}'
+                );
+            """
+            app.logger.info("Checking if subscription_usage table exists")
+
+            table_exists = db.execute_sql(check_table_query).fetchone()[0]
+
+            if table_exists:
+                app.logger.info("subscription_usage table exists")
+
+                # Query to get subscription_id and stripe_subscription_id
+                #  from Subscription table.
+                subscription_query = f"""
+                    SELECT id, stripe_subscription_id
+                    FROM \"{Env.DB_SCHEMA}\".{DBTable.SUBSCRIPTION}
+                    WHERE organization_id = %s AND is_active = TRUE;
+                """
+                subscription_query_params = (org_id,)
+                app.logger.info(
+                    "Executing subscription query for organization %s", org_id
+                )
+
+                subscription_result = db.execute_sql(
+                    subscription_query, subscription_query_params
+                ).fetchone()
+
+                if subscription_result:
+                    subscription_id, stripe_subscription_id = subscription_result
+                    app.logger.info(
+                        "Found subscription: id=%s, stripe_subscription_id=%s",
+                        subscription_id,
+                        stripe_subscription_id,
+                    )
+
+                    stripe_subscription_id = (
+                        stripe_subscription_id if stripe_subscription_id else "trial"
+                    )
+
+                    # Insert or update data in the subscription_usage table
+                    subscription_usage_query = f"""
+                        INSERT INTO
+                        \"{Env.DB_SCHEMA}\".{DBTable.SUBSCRIPTION_USAGE} (
+                        subscription_id, stripe_subscription_id,
+                        organization_id, pages_processed, record_date,
+                        created_at, updated_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (
+                        subscription_id, stripe_subscription_id, record_date
+                        ) DO UPDATE
+                        SET pages_processed =
+                        {DBTable.SUBSCRIPTION_USAGE}.pages_processed
+                        + EXCLUDED.pages_processed;
+                    """
+                    subscription_usage_params = (
+                        subscription_id,
+                        stripe_subscription_id,
+                        org_id,
+                        page_count,
+                        current_time.date(),
+                        current_time,
+                        current_time,
+                    )
+                    app.logger.info("Executing subscription usage insert/update query.")
+
+                    db.execute_sql(subscription_usage_query, subscription_usage_params)
+                    app.logger.info("Subscription usage updated for %s", org_id)
+                else:
+                    app.logger.warning("No active subscription found for %s", org_id)
+
             return make_response(result, 200)
     except Exception as e:
         app.logger.error(f"Error while creating page usage entry: {e}")
@@ -189,7 +263,7 @@ def usage() -> Any:
         "error": "",
         "unique_id": "",
     }
-    payload: Optional[dict[Any, Any]] = request.json
+    payload: dict[Any, Any] | None = request.json
     if not payload:
         result["error"] = Env.INVALID_PAYLOAD
         return make_response(result, 400)
@@ -198,7 +272,7 @@ def usage() -> Any:
     workflow_id = payload.get("workflow_id")
     execution_id = payload.get("execution_id", "")
     adapter_instance_id = payload.get("adapter_instance_id", "")
-    run_id = payload.get("run_id", "")
+    run_id = payload.get("run_id")
     usage_type = payload.get("usage_type", "")
     llm_usage_reason = payload.get("llm_usage_reason", "")
     model_name = payload.get("model_name", "")
@@ -254,9 +328,7 @@ def usage() -> Any:
         with db.atomic() as transaction:
             db.execute_sql(query, params)
             transaction.commit()
-            app.logger.info(
-                "Adapter usage recorded with id %s for %s", usage_id, org_id
-            )
+            app.logger.info("Adapter usage recorded with id %s for %s", usage_id, org_id)
             result["status"] = "OK"
             result["unique_id"] = usage_id
             return make_response(result, 200)
@@ -310,7 +382,7 @@ def cache() -> Any:
     bearer_token = get_token_from_auth_header(request)
     _, account_id = get_organization_from_bearer_token(bearer_token)
     if request.method == "POST":
-        payload: Optional[dict[Any, Any]] = request.json
+        payload: dict[Any, Any] | None = request.json
         if not payload:
             return Env.BAD_REQUEST, 400
         key = payload.get("key")
@@ -417,10 +489,7 @@ def adapter_instance() -> Any:
         )
         raise APIError(message=msg, code=403)
     except Exception as e:
-        msg = (
-            f"Error while getting db adapter settings for "
-            f"{adapter_instance_id}: {e}"
-        )
+        msg = f"Error while getting db adapter settings for {adapter_instance_id}: {e}"
         raise APIError(message=msg)
 
 
@@ -452,8 +521,38 @@ def custom_tool_instance() -> Any:
         )
         return jsonify(data_dict)
     except Exception as e:
+        if isinstance(e, APIError):
+            raise e
         msg = (
             f"Error while getting data for Prompt Studio project "
             f"{prompt_registry_id}: {e}"
         )
+        raise APIError(message=msg) from e
+
+
+@platform_bp.route(
+    "/llm_profile_instance",
+    methods=["GET"],
+    endpoint="llm_profile_instance",
+)
+@authentication_middleware
+def llm_profile_instance() -> Any:
+    """Fetching llm profile instance."""
+    bearer_token = get_token_from_auth_header(request)
+    _, organization_id = get_organization_from_bearer_token(bearer_token)
+    if not organization_id:
+        return Env.INVALID_ORGANIZATOIN, 403
+    llm_profile_id = request.args.get("llm_profile_id")
+    if not llm_profile_id:
+        raise APIError(message="llm_profile_id is required", code=400)
+    try:
+        data_dict = PromptStudioRequestHelper.get_llm_profile_instance_from_db(
+            organization_id=organization_id,
+            llm_profile_id=llm_profile_id,
+        )
+        return jsonify(data_dict)
+    except Exception as e:
+        if isinstance(e, APIError):
+            raise e
+        msg = f"Error while getting data for LLM profile {llm_profile_id}: {e}"
         raise APIError(message=msg) from e

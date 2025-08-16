@@ -110,6 +110,29 @@ class BoxFS(UnstractFileSystem):
     def get_fsspec_fs(self) -> BoxFileSystem:
         return self.box_fs
 
+    def extract_metadata_file_hash(self, metadata: dict[str, Any]) -> str | None:
+        """Extracts a unique file hash from metadata.
+
+        Args:
+            metadata (dict): Metadata dictionary obtained from fsspec.
+
+        Returns:
+            Optional[str]: The file hash in hexadecimal format or None if not found.
+        """
+        logger.error(f"[Box] File hash not found for the metadata: {metadata}")
+        return None
+
+    def is_dir_by_metadata(self, metadata: dict[str, Any]) -> bool:
+        """Check if the given path is a directory.
+
+        Args:
+            metadata (dict): Metadata dictionary obtained from fsspec or cloud API.
+
+        Returns:
+            bool: True if the path is a directory, False otherwise.
+        """
+        raise NotImplementedError
+
     def test_credentials(self) -> bool:
         """To test credentials for the Box connector."""
         is_dir = False

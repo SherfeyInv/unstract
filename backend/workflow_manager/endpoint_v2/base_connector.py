@@ -1,40 +1,31 @@
 import json
 from typing import Any
 
-from django.conf import settings
 from fsspec import AbstractFileSystem
-from unstract.workflow_execution.execution_file_handler import ExecutionFileHandler
 from utils.constants import Common
 from utils.user_context import UserContext
 
-from backend.constants import FeatureFlag
 from unstract.connectors.filesystems import connectors
 from unstract.connectors.filesystems.unstract_file_system import UnstractFileSystem
-from unstract.flags.feature_flag import check_feature_flag_status
-
-if check_feature_flag_status(FeatureFlag.REMOTE_FILE_STORAGE):
-    from unstract.filesystem import FileStorageType, FileSystem
+from unstract.workflow_execution.execution_file_handler import ExecutionFileHandler
 
 
 class BaseConnector(ExecutionFileHandler):
     """Base class for connectors providing common methods and utilities."""
 
     def __init__(
-        self, workflow_id: str, execution_id: str, organization_id: str
+        self,
+        workflow_id: str,
+        execution_id: str,
+        organization_id: str,
+        file_execution_id: str | None = None,
     ) -> None:
         """Initialize the BaseConnector class.
 
         This class serves as a base for connectors and provides common
         utilities.
         """
-        super().__init__(workflow_id, execution_id, organization_id)
-        if not check_feature_flag_status(FeatureFlag.REMOTE_FILE_STORAGE):
-            if not (settings.API_STORAGE_DIR and settings.WORKFLOW_DATA_DIR):
-                raise ValueError("Missed env API_STORAGE_DIR or WORKFLOW_DATA_DIR")
-            # Directory path for storing execution-related files for API
-            self.api_storage_dir: str = self.create_execution_dir_path(
-                workflow_id, execution_id, organization_id, settings.API_STORAGE_DIR
-            )
+        super().__init__(workflow_id, execution_id, organization_id, file_execution_id)
 
     def get_fsspec(
         self, settings: dict[str, Any], connector_id: str
@@ -86,16 +77,8 @@ class BaseConnector(ExecutionFileHandler):
         json.JSONDecodeError: If there is an issue decoding the JSON file.
         """
         try:
-            if check_feature_flag_status(FeatureFlag.REMOTE_FILE_STORAGE):
-                file_system = FileSystem(FileStorageType.WORKFLOW_EXECUTION)
-                file_storage = file_system.get_file_storage()
-                file_contents = file_storage.read(
-                    path=file_path, mode="r", encoding="utf-8"
-                )
-                schema: dict[str, Any] = json.load(file_contents)
-            else:
-                with open(file_path, encoding="utf-8") as file:
-                    schema: dict[str, Any] = json.load(file)
+            with open(file_path, encoding="utf-8") as file:
+                schema: dict[str, Any] = json.load(file)
         except OSError:
             schema = {}
         return schema
@@ -114,12 +97,24 @@ class BaseConnector(ExecutionFileHandler):
         str: The directory path for the execution.
         """
         organization_id = UserContext.get_organization_identifier()
-        if check_feature_flag_status(FeatureFlag.REMOTE_FILE_STORAGE):
-            api_storage_dir: str = cls.get_api_execution_dir(
-                workflow_id, execution_id, organization_id
-            )
-        else:
-            api_storage_dir: str = cls.create_execution_dir_path(
-                workflow_id, execution_id, organization_id, settings.API_STORAGE_DIR
-            )
+        api_storage_dir: str = cls.get_api_execution_dir(
+            workflow_id, execution_id, organization_id
+        )
         return api_storage_dir
+
+    @classmethod
+    def get_execution_dir_path(cls, workflow_id: str, execution_id: str) -> str:
+        """Get the directory path for storing execution-related files.
+
+        Parameters:
+        - workflow_id (str): Identifier for the workflow.
+        - execution_id (str): Identifier for the execution.
+
+        Returns:
+        str: The directory path for the execution.
+        """
+        organization_id = UserContext.get_organization_identifier()
+        execution_dir: str = cls.get_execution_dir(
+            workflow_id, execution_id, organization_id
+        )
+        return execution_dir

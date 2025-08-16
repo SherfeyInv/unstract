@@ -7,6 +7,7 @@ import cronstrue from "cronstrue";
 import { useAxiosPrivate } from "../../../hooks/useAxiosPrivate.js";
 import { useAlertStore } from "../../../store/alert-store";
 import { useSessionStore } from "../../../store/session-store";
+import { usePromptStudioStore } from "../../../store/prompt-studio-store";
 import CronGenerator from "../../cron-generator/CronGenerator.jsx";
 import { workflowService } from "../../workflows/workflow/workflow-service.js";
 import "./EtlTaskDeploy.css";
@@ -14,6 +15,9 @@ import { useExceptionHandler } from "../../../hooks/useExceptionHandler.jsx";
 import { useWorkflowStore } from "../../../store/workflow-store.js";
 import { getBackendErrorDetail } from "../../../helpers/GetStaticData.js";
 import usePostHogEvents from "../../../hooks/usePostHogEvents.js";
+import { PromptStudioModal } from "../../common/PromptStudioModal";
+import { usePromptStudioService } from "../../api/prompt-studio-service";
+import { useInitialFetchCount } from "../../../hooks/usePromptStudioFetchCount";
 
 const defaultFromDetails = {
   pipeline_name: "",
@@ -31,6 +35,7 @@ const EtlTaskDeploy = ({
   isEdit,
   selectedRow = {},
   setDeploymentName,
+  onDeploymentCreated,
 }) => {
   const [form] = Form.useForm();
   const workflowStore = useWorkflowStore();
@@ -52,6 +57,15 @@ const EtlTaskDeploy = ({
   const [summary, setSummary] = useState(null);
   const { posthogDeploymentEventText, setPostHogCustomEvent } =
     usePostHogEvents();
+
+  const { count, isLoadingModal, fetchCount } = usePromptStudioStore();
+  const [showModal, setShowModal] = useState(false);
+  const [modalDismissed, setModalDismissed] = useState(false);
+  const { getPromptStudioCount } = usePromptStudioService();
+  const initialFetchComplete = useInitialFetchCount(
+    fetchCount,
+    getPromptStudioCount
+  );
 
   useEffect(() => {
     if (workflowId) {
@@ -128,7 +142,8 @@ const EtlTaskDeploy = ({
     } else {
       getWorkflows();
     }
-  }, [type]);
+    fetchCount();
+  }, [type, fetchCount]);
 
   const clearFormDetails = () => {
     setFormDetails({ ...defaultFromDetails });
@@ -233,6 +248,11 @@ const EtlTaskDeploy = ({
           // Update - can update workflow endpoint status in store
           updateWorkflow({ allowChangeEndpoint: false });
           setDeploymentName(body.pipeline_name);
+
+          // Call the callback to refresh deployment info
+          if (onDeploymentCreated) {
+            onDeploymentCreated();
+          }
         } else {
           addPipeline(res?.data);
         }
@@ -251,8 +271,25 @@ const EtlTaskDeploy = ({
       });
   };
 
+  useEffect(() => {
+    if (
+      initialFetchComplete &&
+      !isLoadingModal &&
+      count === 0 &&
+      !modalDismissed
+    ) {
+      setShowModal(true);
+    }
+  }, [initialFetchComplete, isLoadingModal, count, modalDismissed]);
+
+  const handleModalClose = () => {
+    setShowModal(false);
+    setModalDismissed(true);
+  };
+
   return (
     <>
+      {showModal && <PromptStudioModal onClose={handleModalClose} />}
       <Modal
         title={isEdit ? `Update ${title}` : `Add ${title}`}
         centered
@@ -364,6 +401,7 @@ EtlTaskDeploy.propTypes = {
   isEdit: PropTypes.bool,
   selectedRow: PropTypes.object,
   setDeploymentName: PropTypes.func,
+  onDeploymentCreated: PropTypes.func,
 };
 
 export { EtlTaskDeploy };

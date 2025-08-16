@@ -7,6 +7,7 @@ class ToolStudioKeys:
     PROMPTS = "prompts"
     PLATFORM_SERVICE_API_KEY = "PLATFORM_SERVICE_API_KEY"
     SUMMARIZE_LLM_PROFILE = "summarize_llm_profile"
+    SUMMARIZE_LLM_ADAPTER = "summarize_llm_adapter"
     DEFAULT_PROFILE = "default_profile"
 
 
@@ -22,6 +23,7 @@ class ToolStudioPromptKeys:
     CREATED_BY = "created_by"
     TOOL_ID = "tool_id"
     RUN_ID = "run_id"
+    EXECUTION_ID = "execution_id"
     NUMBER = "Number"
     FLOAT = "Float"
     PG_VECTOR = "Postgres pg_vector"
@@ -98,6 +100,7 @@ class ToolStudioPromptKeys:
     ENABLE_HIGHLIGHT = "enable_highlight"
     REQUIRED = "required"
     EXECUTION_SOURCE = "execution_source"
+    LINE_ITEM = "line-item"
 
 
 class FileViewTypes:
@@ -146,3 +149,60 @@ class ExecutionSource(Enum):
     """
 
     IDE = "ide"
+
+
+class IndexingConstants:
+    TOOL_ID = "tool_id"
+    EMBEDDING_INSTANCE_ID = "embedding_instance_id"
+    VECTOR_DB_INSTANCE_ID = "vector_db_instance_id"
+    X2TEXT_INSTANCE_ID = "x2text_instance_id"
+    FILE_PATH = "file_path"
+    CHUNK_SIZE = "chunk_size"
+    CHUNK_OVERLAP = "chunk_overlap"
+    REINDEX = "reindex"
+    FILE_HASH = "file_hash"
+    OUTPUT_FILE_PATH = "output_file_path"
+    ENABLE_HIGHLIGHT = "enable_highlight"
+    USAGE_KWARGS = "usage_kwargs"
+    PROCESS_TEXT = "process_text"
+    EXTRACTED_TEXT = "extracted_text"
+    TAGS = "tags"
+    EXECUTION_SOURCE = "execution_source"
+    DOC_ID = "doc_id"
+    TOOL_EXECUTION_METATADA = "tool_execution_metadata"
+    EXECUTION_DATA_DIR = "execution_data_dir"
+    RUN_ID = "run_id"
+
+
+class DefaultValues:
+    """Default values used throughout the prompt studio helper."""
+
+    DEFAULT_PROFILE_NAME = "Default Profile"
+    DEFAULT_SAMPLE_PROFILE_NAME = "sample profile"
+    DEFAULT_CHUNK_SIZE = 0
+    DEFAULT_CHUNK_OVERLAP = 0
+    DEFAULT_SECTION = "Default"
+    DEFAULT_RETRIEVAL_STRATEGY = "simple"
+    DEFAULT_SIMILARITY_TOP_K = 3
+    DEFAULT_EXCLUDE_FAILED = True
+    DEFAULT_ENABLE_CHALLENGE = False
+    DEFAULT_ENABLE_HIGHLIGHT = False
+    DEFAULT_SUMMARIZE_AS_SOURCE = False
+    DEFAULT_SUMMARIZE_CONTEXT = False
+    DEFAULT_SINGLE_PASS_EXTRACTION_MODE = False
+    DEFAULT_EVALUATE = True
+    DEFAULT_EVAL_QUALITY_FAITHFULNESS = True
+    DEFAULT_EVAL_QUALITY_CORRECTNESS = True
+    DEFAULT_EVAL_QUALITY_RELEVANCE = True
+    DEFAULT_EVAL_SECURITY_PII = True
+    DEFAULT_EVAL_GUIDANCE_TOXICITY = True
+    DEFAULT_EVAL_GUIDANCE_COMPLETENESS = True
+    DEFAULT_IS_ASSERT = False
+    DEFAULT_ACTIVE = True
+    DEFAULT_REQUIRED = True
+    DEFAULT_ENFORCE_TYPE = "text"
+    DEFAULT_ICON = ""
+    DEFAULT_PREAMBLE = ""
+    DEFAULT_POSTAMBLE = ""
+    DEFAULT_SUMMARIZE_PROMPT = ""
+    DEFAULT_METADATA = {}

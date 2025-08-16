@@ -1,10 +1,9 @@
 import re
-import shutil
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from unstract.sdk.cache import ToolCache
-from unstract.sdk.constants import LogLevel, MetadataKey, ToolEnv
+from unstract.sdk.constants import LogLevel, MetadataKey, ToolEnv, UsageKwargs
 from unstract.sdk.llm import LLM
 from unstract.sdk.tool.base import BaseTool
 from unstract.sdk.utils import ToolUtils
@@ -24,7 +23,7 @@ class ClassifierHelper:
 
         Args:
             tool (BaseTool): Base tool instance
-            output_dir (str): Output directory in TOOL_DATA_DIR
+            output_dir (str): Output directory in EXECUTION_DATA_DIR
         """
         self.tool = tool
         self.output_dir = output_dir
@@ -35,6 +34,7 @@ class ClassifierHelper:
         """Streams error logs and performs required cleanup.
 
         Helper which copies files to a reserved bin in case of an error.
+
         Args:
             message (str): Error message to log
             bin_to_copy_to (str): The folder to copy the failed source file to.
@@ -67,20 +67,13 @@ class ClassifierHelper:
         """
         try:
             output_folder_bin = Path(self.output_dir) / classification
-            if self.tool.workflow_filestorage:
-                output_file = output_folder_bin / source_name
-                self._copy_file(
-                    source_fs=self.tool.workflow_filestorage,
-                    destination_fs=self.tool.workflow_filestorage,
-                    source_path=source_file,
-                    destination_path=str(output_file),
-                )
-            else:
-                if not output_folder_bin.is_dir():
-                    output_folder_bin.mkdir(parents=True, exist_ok=True)
-
-                output_file = output_folder_bin / source_name
-                shutil.copyfile(source_file, output_file)
+            output_file = output_folder_bin / source_name
+            self._copy_file(
+                source_fs=self.tool.workflow_filestorage,
+                destination_fs=self.tool.workflow_filestorage,
+                source_path=source_file,
+                destination_path=str(output_file),
+            )
         except Exception as e:
             self.tool.stream_error_and_exit(f"Error creating output file: {e}")
 
@@ -112,8 +105,8 @@ class ClassifierHelper:
             self.stream_error_and_exit(f"Error copying file: {e}")
 
     def extract_text(
-        self, file: str, text_extraction_adapter_id: Optional[str]
-    ) -> Optional[str]:
+        self, file: str, text_extraction_adapter_id: str | None
+    ) -> str | None:
         """Extract text from file.
 
         Args:
@@ -127,7 +120,7 @@ class ClassifierHelper:
 
         return self._extract_from_adapter(file, text_extraction_adapter_id)
 
-    def _extract_from_adapter(self, file: str, adapter_id: str) -> Optional[str]:
+    def _extract_from_adapter(self, file: str, adapter_id: str) -> str | None:
         """Extract text from adapter.
 
         Args:
@@ -139,13 +132,21 @@ class ClassifierHelper:
         self.tool.stream_log(
             f"Creating text extraction adapter using adapter_id: {adapter_id}"
         )
-        x2text = X2Text(tool=self.tool, adapter_instance_id=adapter_id)
+        usage_kwargs: dict[Any, Any] = dict()
+        usage_kwargs[UsageKwargs.FILE_NAME] = self.tool.source_file_name
+        usage_kwargs[UsageKwargs.RUN_ID] = self.tool.file_execution_id
+
+        x2text = X2Text(
+            tool=self.tool, adapter_instance_id=adapter_id, usage_kwargs=usage_kwargs
+        )
 
         self.tool.stream_log("Text extraction adapter has been created successfully.")
 
         try:
             extraction_result: TextExtractionResult = x2text.process(
-                input_file_path=file
+                input_file_path=file,
+                fs=self.tool.workflow_filestorage,
+                tags=self.tool.tags,
             )
             extracted_text: str = extraction_result.extracted_text
             return extracted_text
@@ -153,7 +154,7 @@ class ClassifierHelper:
             self.tool.stream_log(f"Adapter error: {e}")
             return None
 
-    def _extract_from_file(self, file: str) -> Optional[str]:
+    def _extract_from_file(self, file: str) -> str | None:
         """Extract text from file.
 
         Args:
@@ -163,13 +164,9 @@ class ClassifierHelper:
         """
         self.tool.stream_log("Extracting text from file")
         try:
-            if self.tool.workflow_filestorage:
-                text = self.tool.workflow_filestorage.read(path=file, mode="rb").decode(
-                    "utf-8"
-                )
-            else:
-                with open(file, "rb") as f:
-                    text = f.read().decode("utf-8")
+            text = self.tool.workflow_filestorage.read(path=file, mode="rb").decode(
+                "utf-8"
+            )
         except Exception as e:
             self.tool.stream_log(f"File error: {e}")
             return None
@@ -184,8 +181,9 @@ class ClassifierHelper:
         bins: list[str],
         prompt: str,
         llm: LLM,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Find classification for text.
+
         Args:
             use_cache (bool): Whether to use cache
             settings_string (str): hash of settings
@@ -282,7 +280,7 @@ class ClassifierHelper:
             )
         return classification
 
-    def get_result_from_cache(self, cache_key: str) -> Optional[str]:
+    def get_result_from_cache(self, cache_key: str) -> str | None:
         """Get result from cache.
 
         Args:
@@ -296,7 +294,7 @@ class ClassifierHelper:
             platform_host=self.tool.get_env_or_die(ToolEnv.PLATFORM_HOST),
             platform_port=int(self.tool.get_env_or_die(ToolEnv.PLATFORM_PORT)),
         )
-        cached_response: Optional[str] = cache.get(cache_key)
+        cached_response: str | None = cache.get(cache_key)
         if cached_response is not None:
             classification = cached_response
             self.tool.stream_cost(cost=0.0, cost_units="cache")

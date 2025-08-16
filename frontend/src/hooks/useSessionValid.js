@@ -22,7 +22,7 @@ let selectedProductStore;
 let PRODUCT_NAMES = {};
 
 try {
-  selectedProductStore = require("../plugins/llm-whisperer/store/select-product-store.js");
+  selectedProductStore = require("../plugins/store/select-product-store.js");
   PRODUCT_NAMES = require("../plugins/llm-whisperer/helper").PRODUCT_NAMES;
 } catch {
   // Ignore if hook not available
@@ -51,6 +51,7 @@ function useSessionValid() {
     if (
       userSessionData &&
       selectedProductStore &&
+      Object.keys(PRODUCT_NAMES).length !== 0 &&
       !Object.values(PRODUCT_NAMES).includes(selectedProduct)
     ) {
       navigate("/selectProduct");
@@ -59,6 +60,7 @@ function useSessionValid() {
     return false;
   };
   return async () => {
+    let userAndOrgDetails = null;
     try {
       const userSessionData = await userSession();
 
@@ -92,7 +94,6 @@ function useSessionValid() {
         navigate("/setOrg", { state: orgs });
         return;
       }
-      let userAndOrgDetails = null;
       const orgId = signedInOrgId || orgs[0].id;
       const csrfToken = Cookies.get("csrftoken");
 
@@ -114,6 +115,7 @@ function useSessionValid() {
       userAndOrgDetails["orgId"] = orgId;
       userAndOrgDetails["csrfToken"] = csrfToken;
       userAndOrgDetails["logEventsId"] = setOrgRes?.data?.log_events_id;
+      userAndOrgDetails["is_staff"] = userSessionData?.is_staff;
 
       requestOptions["method"] = "GET";
 
@@ -161,8 +163,7 @@ function useSessionValid() {
         userAndOrgDetails["isPlatformAdmin"] = await isPlatformAdmin();
       }
       userAndOrgDetails["role"] = userSessionData.role;
-      // Set the session details
-      setSessionDetails(getSessionData(userAndOrgDetails));
+      userAndOrgDetails["provider"] = userSessionData.provider;
     } catch (err) {
       // TODO: Throw popup error message
       // REVIEW: Add condition to check for trial period status
@@ -178,6 +179,9 @@ function useSessionValid() {
         // May be need a logout button there or auto logout
       }
       setAlertDetails(handleException(err));
+    } finally {
+      // Set the session details
+      setSessionDetails(getSessionData(userAndOrgDetails));
     }
   };
 }

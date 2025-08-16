@@ -1,15 +1,28 @@
+import json
 import logging
 import uuid
-from typing import Any, Optional
+from datetime import datetime
+from typing import Any
 
 from account_v2.custom_exceptions import DuplicateData
 from django.db import IntegrityError
 from django.db.models import QuerySet
-from django.http import HttpRequest
+from django.http import HttpRequest, HttpResponse
+from file_management.constants import FileInformationKey as FileKey
 from file_management.exceptions import FileNotFound
-from file_management.file_management_helper import FileManagerHelper
 from permissions.permission import IsOwner, IsOwnerOrSharedUser
-from prompt_studio.processor_loader import get_plugin_class_by_name, load_plugins
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.versioning import URLPathVersioning
+from tool_instance_v2.models import ToolInstance
+from utils.file_storage.helpers.prompt_studio_file_helper import PromptStudioFileHelper
+from utils.user_context import UserContext
+from utils.user_session import UserSessionUtils
+
+from prompt_studio.processor_loader import get_plugin_class_by_name
+from prompt_studio.processor_loader import load_plugins as load_processor_plugins
 from prompt_studio.prompt_profile_manager_v2.constants import (
     ProfileManagerErrors,
     ProfileManagerKeys,
@@ -19,7 +32,6 @@ from prompt_studio.prompt_profile_manager_v2.serializers import ProfileManagerSe
 from prompt_studio.prompt_studio_core_v2.constants import (
     FileViewTypes,
     ToolStudioErrors,
-    ToolStudioKeys,
     ToolStudioPromptKeys,
 )
 from prompt_studio.prompt_studio_core_v2.document_indexing_service import (
@@ -30,7 +42,11 @@ from prompt_studio.prompt_studio_core_v2.exceptions import (
     MaxProfilesReachedError,
     ToolDeleteError,
 )
+from prompt_studio.prompt_studio_core_v2.migration_utils import SummarizeMigrationUtils
 from prompt_studio.prompt_studio_core_v2.prompt_studio_helper import PromptStudioHelper
+from prompt_studio.prompt_studio_core_v2.retrieval_strategies import (
+    get_retrieval_strategy_metadata,
+)
 from prompt_studio.prompt_studio_document_manager_v2.models import DocumentManager
 from prompt_studio.prompt_studio_document_manager_v2.prompt_studio_document_helper import (  # noqa: E501
     PromptStudioDocumentHelper,
@@ -46,19 +62,7 @@ from prompt_studio.prompt_studio_registry_v2.serializers import (
 from prompt_studio.prompt_studio_v2.constants import ToolStudioPromptErrors
 from prompt_studio.prompt_studio_v2.models import ToolStudioPrompt
 from prompt_studio.prompt_studio_v2.serializers import ToolStudioPromptSerializer
-from rest_framework import status, viewsets
-from rest_framework.decorators import action
-from rest_framework.request import Request
-from rest_framework.response import Response
-from rest_framework.versioning import URLPathVersioning
-from tool_instance_v2.models import ToolInstance
 from unstract.sdk.utils.common_utils import CommonUtils
-from utils.file_storage.helpers.prompt_studio_file_helper import PromptStudioFileHelper
-from utils.user_session import UserSessionUtils
-
-from backend.constants import FeatureFlag
-from unstract.connectors.filesystems.local_storage.local_storage import LocalStorageFS
-from unstract.flags.feature_flag import check_feature_flag_status
 
 from .models import CustomTool
 from .serializers import (
@@ -79,7 +83,7 @@ class PromptStudioCoreView(viewsets.ModelViewSet):
 
     serializer_class = CustomToolSerializer
 
-    processor_plugins = load_plugins()
+    processor_plugins = load_processor_plugins()
 
     def get_permissions(self) -> list[Any]:
         if self.action == "destroy":
@@ -87,8 +91,17 @@ class PromptStudioCoreView(viewsets.ModelViewSet):
 
         return [IsOwnerOrSharedUser()]
 
-    def get_queryset(self) -> Optional[QuerySet]:
+    def get_queryset(self) -> QuerySet | None:
         return CustomTool.objects.for_user(self.request.user)
+
+    def get_object(self):
+        """Override get_object to trigger lazy migration when accessing tools."""
+        instance = super().get_object()
+
+        # Trigger lazy migration if needed (safe, with locking)
+        SummarizeMigrationUtils.migrate_tool_to_adapter_based(instance)
+
+        return instance
 
     def create(self, request: HttpRequest) -> Response:
         serializer = self.get_serializer(data=request.data)
@@ -135,19 +148,6 @@ class PromptStudioCoreView(viewsets.ModelViewSet):
     def partial_update(
         self, request: Request, *args: tuple[Any], **kwargs: dict[str, Any]
     ) -> Response:
-        summarize_llm_profile_id = request.data.get(
-            ToolStudioKeys.SUMMARIZE_LLM_PROFILE, None
-        )
-        if summarize_llm_profile_id:
-            prompt_tool = self.get_object()
-
-            ProfileManager.objects.filter(prompt_studio_tool=prompt_tool).update(
-                is_summarize_llm=False
-            )
-            profile_manager = ProfileManager.objects.get(pk=summarize_llm_profile_id)
-            profile_manager.is_summarize_llm = True
-            profile_manager.save()
-
         return super().partial_update(request, *args, **kwargs)
 
     @action(detail=True, methods=["get"])
@@ -165,6 +165,30 @@ class PromptStudioCoreView(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error occured while fetching select fields {e}")
             return Response(select_choices, status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["get"])
+    def get_retrieval_strategies(self, request: HttpRequest, pk: Any = None) -> Response:
+        """Method to return all retrieval strategy metadata.
+
+        Returns detailed information about each retrieval strategy including
+        descriptions, use cases, performance impacts, and technical details.
+
+        Args:
+            request (HttpRequest): The HTTP request
+            pk (Any): Primary key of the tool (not used in this method)
+
+        Returns:
+            Response: Response containing retrieval strategy metadata
+        """
+        try:
+            strategies = get_retrieval_strategy_metadata()
+            return Response(strategies, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error occurred while fetching retrieval strategies: {e}")
+            return Response(
+                {"error": "Failed to fetch retrieval strategies"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @action(detail=True, methods=["get"])
     def list_profiles(self, request: HttpRequest, pk: Any = None) -> Response:
@@ -218,17 +242,12 @@ class PromptStudioCoreView(viewsets.ModelViewSet):
         tool = self.get_object()
         serializer = PromptStudioIndexSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        document_id: str = serializer.validated_data.get(
-            ToolStudioPromptKeys.DOCUMENT_ID
-        )
+        document_id: str = serializer.validated_data.get(ToolStudioPromptKeys.DOCUMENT_ID)
         document: DocumentManager = DocumentManager.objects.get(pk=document_id)
         file_name: str = document.document_name
-        text_processor = get_plugin_class_by_name(
-            name="text_processor",
-            plugins=self.processor_plugins,
-        )
         # Generate a run_id
         run_id = CommonUtils.generate_uuid()
+
         unique_id = PromptStudioHelper.index_document(
             tool_id=str(tool.tool_id),
             file_name=file_name,
@@ -236,25 +255,7 @@ class PromptStudioCoreView(viewsets.ModelViewSet):
             user_id=tool.created_by.user_id,
             document_id=document_id,
             run_id=run_id,
-            text_processor=text_processor,
         )
-
-        usage_kwargs: dict[Any, Any] = dict()
-        usage_kwargs[ToolStudioPromptKeys.RUN_ID] = run_id
-        cls = get_plugin_class_by_name(
-            name="summarizer",
-            plugins=self.processor_plugins,
-        )
-        if cls:
-            cls.process(
-                tool_id=str(tool.tool_id),
-                file_name=file_name,
-                org_id=UserSessionUtils.get_organization_id(request),
-                user_id=tool.created_by.user_id,
-                document_id=document_id,
-                usage_kwargs=usage_kwargs.copy(),
-            )
-
         if unique_id:
             return Response(
                 {"message": "Document indexed successfully."},
@@ -286,10 +287,6 @@ class PromptStudioCoreView(viewsets.ModelViewSet):
         if not run_id:
             # Generate a run_id
             run_id = CommonUtils.generate_uuid()
-        text_processor = get_plugin_class_by_name(
-            name="text_processor",
-            plugins=self.processor_plugins,
-        )
         response: dict[str, Any] = PromptStudioHelper.prompt_responder(
             id=id,
             tool_id=tool_id,
@@ -298,7 +295,6 @@ class PromptStudioCoreView(viewsets.ModelViewSet):
             document_id=document_id,
             run_id=run_id,
             profile_manager_id=profile_manager,
-            text_processor=text_processor,
         )
         return Response(response, status=status.HTTP_200_OK)
 
@@ -322,23 +318,17 @@ class PromptStudioCoreView(viewsets.ModelViewSet):
         if not run_id:
             # Generate a run_id
             run_id = CommonUtils.generate_uuid()
-        text_processor = get_plugin_class_by_name(
-            name="text_processor",
-            plugins=self.processor_plugins,
-        )
         response: dict[str, Any] = PromptStudioHelper.prompt_responder(
             tool_id=tool_id,
             org_id=UserSessionUtils.get_organization_id(request),
             user_id=custom_tool.created_by.user_id,
             document_id=document_id,
             run_id=run_id,
-            text_processor=text_processor,
         )
         return Response(response, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["get"])
     def list_of_shared_users(self, request: HttpRequest, pk: Any = None) -> Response:
-
         custom_tool = (
             self.get_object()
         )  # Assuming you have a get_object method in your viewset
@@ -404,56 +394,33 @@ class PromptStudioCoreView(viewsets.ModelViewSet):
         document: DocumentManager = DocumentManager.objects.get(pk=document_id)
         file_name: str = document.document_name
         view_type: str = serializer.validated_data.get("view_type")
+        file_converter = get_plugin_class_by_name(
+            name="file_converter",
+            plugins=self.processor_plugins,
+        )
 
+        allowed_content_types = FileKey.FILE_UPLOAD_ALLOWED_MIME
+        if file_converter:
+            allowed_content_types = file_converter.get_extented_file_information_key()
         filename_without_extension = file_name.rsplit(".", 1)[0]
         if view_type == FileViewTypes.EXTRACT:
             file_name = (
-                f"{FileViewTypes.EXTRACT.lower()}/" f"{filename_without_extension}.txt"
+                f"{FileViewTypes.EXTRACT.lower()}/{filename_without_extension}.txt"
             )
         if view_type == FileViewTypes.SUMMARIZE:
             file_name = (
-                f"{FileViewTypes.SUMMARIZE.lower()}/"
-                f"{filename_without_extension}.txt"
+                f"{FileViewTypes.SUMMARIZE.lower()}/{filename_without_extension}.txt"
             )
-
-        if not check_feature_flag_status(FeatureFlag.REMOTE_FILE_STORAGE):
-
-            file_path = file_path = FileManagerHelper.handle_sub_directory_for_tenants(
-                UserSessionUtils.get_organization_id(request),
-                is_create=True,
+        try:
+            contents = PromptStudioFileHelper.fetch_file_contents(
+                file_name=file_name,
+                org_id=UserSessionUtils.get_organization_id(request),
                 user_id=custom_tool.created_by.user_id,
                 tool_id=str(custom_tool.tool_id),
+                allowed_content_types=allowed_content_types,
             )
-            file_system = LocalStorageFS(settings={"path": file_path})
-            if not file_path.endswith("/"):
-                file_path += "/"
-            file_path += file_name
-            # Temporary Hack for frictionless onboarding as the user id will be empty
-            try:
-                contents = FileManagerHelper.fetch_file_contents(file_system, file_path)
-            except FileNotFound:
-                file_path = file_path = (
-                    FileManagerHelper.handle_sub_directory_for_tenants(
-                        UserSessionUtils.get_organization_id(request),
-                        is_create=True,
-                        user_id="",
-                        tool_id=str(custom_tool.tool_id),
-                    )
-                )
-                if not file_path.endswith("/"):
-                    file_path += "/"
-                    file_path += file_name
-                contents = FileManagerHelper.fetch_file_contents(file_system, file_path)
-        else:
-            try:
-                contents = PromptStudioFileHelper.fetch_file_contents(
-                    file_name=file_name,
-                    org_id=UserSessionUtils.get_organization_id(request),
-                    user_id=custom_tool.created_by.user_id,
-                    tool_id=str(custom_tool.tool_id),
-                )
-            except FileNotFoundError:
-                raise FileNotFound()
+        except FileNotFoundError:
+            raise FileNotFound()
         return Response({"data": contents}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"])
@@ -462,34 +429,32 @@ class PromptStudioCoreView(viewsets.ModelViewSet):
         serializer = FileUploadIdeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         uploaded_files: Any = serializer.validated_data.get("file")
+        file_converter = get_plugin_class_by_name(
+            name="file_converter",
+            plugins=self.processor_plugins,
+        )
+
         documents = []
         for uploaded_file in uploaded_files:
             # Store file
             file_name = uploaded_file.name
-            logger.info(
-                f"Uploading file: {file_name}" if file_name else "Uploading file"
+            file_data = uploaded_file
+            file_type = uploaded_file.content_type
+            # Convert non-PDF files
+            if file_converter and file_type != "application/pdf":
+                file_data, file_name = file_converter.process_file(
+                    uploaded_file, file_name
+                )
+
+            logger.info(f"Uploading file: {file_name}" if file_name else "Uploading file")
+
+            PromptStudioFileHelper.upload_for_ide(
+                org_id=UserSessionUtils.get_organization_id(request),
+                user_id=custom_tool.created_by.user_id,
+                tool_id=str(custom_tool.tool_id),
+                file_name=file_name,
+                file_data=file_data,
             )
-            if not check_feature_flag_status(flag_key=FeatureFlag.REMOTE_FILE_STORAGE):
-                file_path = FileManagerHelper.handle_sub_directory_for_tenants(
-                    UserSessionUtils.get_organization_id(request),
-                    is_create=True,
-                    user_id=custom_tool.created_by.user_id,
-                    tool_id=str(custom_tool.tool_id),
-                )
-                file_system = LocalStorageFS(settings={"path": file_path})
-                FileManagerHelper.upload_file(
-                    file_system,
-                    file_path,
-                    uploaded_file,
-                    file_name,
-                )
-            else:
-                PromptStudioFileHelper.upload_for_ide(
-                    org_id=UserSessionUtils.get_organization_id(request),
-                    user_id=custom_tool.created_by.user_id,
-                    tool_id=str(custom_tool.tool_id),
-                    uploaded_file=uploaded_file,
-                )
 
             # Create a record in the db for the file
             document = PromptStudioDocumentHelper.create(
@@ -509,9 +474,7 @@ class PromptStudioCoreView(viewsets.ModelViewSet):
         custom_tool = self.get_object()
         serializer = FileInfoIdeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        document_id: str = serializer.validated_data.get(
-            ToolStudioPromptKeys.DOCUMENT_ID
-        )
+        document_id: str = serializer.validated_data.get(ToolStudioPromptKeys.DOCUMENT_ID)
         org_id = UserSessionUtils.get_organization_id(request)
         user_id = custom_tool.created_by.user_id
         document: DocumentManager = DocumentManager.objects.get(pk=document_id)
@@ -528,28 +491,12 @@ class PromptStudioCoreView(viewsets.ModelViewSet):
             document.delete()
             # Delete the files
             file_name: str = document.document_name
-            if not check_feature_flag_status(FeatureFlag.REMOTE_FILE_STORAGE):
-                file_path = FileManagerHelper.handle_sub_directory_for_tenants(
-                    org_id=org_id,
-                    is_create=False,
-                    user_id=user_id,
-                    tool_id=str(custom_tool.tool_id),
-                )
-                path = file_path
-                file_system = LocalStorageFS(settings={"path": path})
-                FileManagerHelper.delete_file(file_system, path, file_name)
-                # Directories to delete the text files
-                directories = ["extract/", "extract/metadata/", "summarize/"]
-                FileManagerHelper.delete_related_files(
-                    file_system, path, file_name, directories
-                )
-            else:
-                PromptStudioFileHelper.delete_for_ide(
-                    org_id=org_id,
-                    user_id=user_id,
-                    tool_id=str(custom_tool.tool_id),
-                    file_name=file_name,
-                )
+            PromptStudioFileHelper.delete_for_ide(
+                org_id=org_id,
+                user_id=user_id,
+                tool_id=str(custom_tool.tool_id),
+                file_name=file_name,
+            )
             return Response(
                 {"data": "File deleted succesfully."},
                 status=status.HTTP_200_OK,
@@ -595,3 +542,98 @@ class PromptStudioCoreView(viewsets.ModelViewSet):
             return Response(serialized_instances)
         else:
             return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["get"])
+    def export_project(self, request: Request, pk: Any = None) -> HttpResponse:
+        """API Endpoint for exporting project settings as downloadable JSON."""
+        custom_tool = self.get_object()
+
+        try:
+            # Get the export data using our helper method
+            export_data = PromptStudioHelper.export_project_settings(custom_tool)
+
+            # Create filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{custom_tool.tool_name}_{timestamp}.json"
+
+            # Create HTTP response with JSON file
+            response = HttpResponse(
+                json.dumps(export_data, indent=2), content_type="application/json"
+            )
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+            return response
+
+        except Exception as exc:
+            logger.error(f"Error exporting project: {exc}")
+            return Response(
+                {"error": "Failed to export project"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @action(detail=False, methods=["post"])
+    def import_project(self, request: Request) -> Response:
+        """API Endpoint for importing project settings from JSON file."""
+        try:
+            import_data, selected_adapters = PromptStudioHelper.validate_import_file(
+                request
+            )
+
+            organization = UserContext.get_organization()
+            if not organization:
+                return Response(
+                    {"error": "Unable to determine organization context"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            tool_name = PromptStudioHelper.generate_unique_tool_name(
+                import_data["tool_metadata"]["tool_name"], organization
+            )
+
+            new_tool = PromptStudioHelper.create_tool_from_import_data(
+                import_data, tool_name, organization, request.user
+            )
+
+            try:
+                PromptStudioHelper.create_profile_manager(
+                    import_data, selected_adapters, new_tool, request.user
+                )
+            except ValueError as e:
+                return Response(
+                    {"error": str(e)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            except Exception as e:
+                logger.error(f"Error creating profile manager: {e}")
+                return Response(
+                    {"error": "Failed to create profile manager"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            PromptStudioHelper.import_prompts(
+                import_data["prompts"], new_tool, request.user
+            )
+
+            needs_adapter_config, warning_message = (
+                PromptStudioHelper.validate_adapter_configuration(
+                    selected_adapters, new_tool
+                )
+            )
+
+            response_data = {
+                "message": f"Project imported successfully as '{tool_name}'",
+                "tool_id": str(new_tool.tool_id),
+                "needs_adapter_config": needs_adapter_config,
+            }
+
+            if warning_message:
+                response_data["warning"] = warning_message
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
+        except Exception as exc:
+            logger.error(f"Error importing project: {exc}")
+            return Response(
+                {"error": "Failed to import project"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

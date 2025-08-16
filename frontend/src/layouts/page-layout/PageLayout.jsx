@@ -7,8 +7,13 @@ import "./PageLayout.css";
 
 import SideNavBar from "../../components/navigations/side-nav-bar/SideNavBar.jsx";
 import { TopNavBar } from "../../components/navigations/top-nav-bar/TopNavBar.jsx";
+import { DisplayLogsAndNotifications } from "../../components/logs-and-notifications/DisplayLogsAndNotifications.jsx";
 
-function PageLayout({ sideBarOptions, topNavBarOptions }) {
+function PageLayout({
+  sideBarOptions,
+  topNavBarOptions,
+  showLogsAndNotifications = true,
+}) {
   const initialCollapsedValue =
     JSON.parse(localStorage.getItem("collapsed")) || false;
   const [collapsed, setCollapsed] = useState(initialCollapsedValue);
@@ -30,6 +35,8 @@ function PageLayout({ sideBarOptions, topNavBarOptions }) {
             className="collapse_btn"
           />
           <Outlet />
+          <div className="height-40" />
+          {showLogsAndNotifications && <DisplayLogsAndNotifications />}
         </Layout>
       </Layout>
     </div>
@@ -38,6 +45,7 @@ function PageLayout({ sideBarOptions, topNavBarOptions }) {
 PageLayout.propTypes = {
   sideBarOptions: PropTypes.any,
   topNavBarOptions: PropTypes.any,
+  showLogsAndNotifications: PropTypes.bool,
 };
 
 export { PageLayout };

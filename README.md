@@ -3,13 +3,14 @@
 
 # Unstract
 
-## Intelligent Document Processing 2.0 (IDP 2.0) Platform Powered by Large Language Models
+## No-code LLM Platform to launch APIs and ETL Pipelines to structure unstructured documents
 
-#### No-code LLM Platform to launch APIs and ETL Pipelines to structure unstructured documents
+##
 
-## 
-
-[![pdm-managed](https://img.shields.io/badge/pdm-managed-blueviolet)](https://pdm-project.org)
+![Python Version from PEP 621 TOML](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2FZipstack%2Funstract%2Frefs%2Fheads%2Fmain%2Fpyproject.toml)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+![GitHub License](https://img.shields.io/github/license/Zipstack/unstract)
+![Docker Pulls](https://img.shields.io/docker/pulls/unstract/backend)
 [![CLA assistant](https://cla-assistant.io/readme/badge/Zipstack/unstract)](https://cla-assistant.io/Zipstack/unstract)
 [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/Zipstack/unstract/main.svg)](https://results.pre-commit.ci/latest/github/Zipstack/unstract/main)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Zipstack_unstract&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Zipstack_unstract)
@@ -60,9 +61,37 @@ Next, either download a release or clone this repo and do the following:
 That's all there is to it!
 
 Follow [these steps](backend/README.md#authentication) to change the default username and password.
+See [user guide](https://docs.unstract.com/unstract/unstract_platform/user_guides/run_platform) for more details on managing the platform.
 
-See [user guide](https://docs.unstract.com/unstract/unstract_platform/user_guides/run_platform) for more details on managing the platform.  
 Another really quick way to experience Unstract is by signing up for our [hosted version](https://us-central.unstract.com/). It comes with a 14 day free trial!
+
+## 📄 Supported File Types
+
+Unstract supports a wide range of file formats for document processing:
+
+| Category | Format | Description |
+|----------|---------|-------------|
+| **Word Processing** | DOCX | Microsoft Word Open XML |
+| | DOC | Microsoft Word |
+| | ODT | OpenDocument Text |
+| **Presentation** | PPTX | Microsoft PowerPoint Open XML |
+| | PPT | Microsoft PowerPoint |
+| | ODP | OpenDocument Presentation |
+| **Spreadsheet** | XLSX | Microsoft Excel Open XML |
+| | XLS | Microsoft Excel |
+| | ODS | OpenDocument Spreadsheet |
+| **Document & Text** | PDF | Portable Document Format |
+| | TXT | Plain Text |
+| | CSV | Comma-Separated Values |
+| | JSON | JavaScript Object Notation |
+| **Image** | BMP | Bitmap Image |
+| | GIF | Graphics Interchange Format |
+| | JPEG | Joint Photographic Experts Group |
+| | JPG | Joint Photographic Experts Group |
+| | PNG | Portable Network Graphics |
+| | TIF | Tagged Image File Format |
+| | TIFF | Tagged Image File Format |
+| | WEBP | Web Picture Format |
 
 ## ⏩ Quick Start Guide
 
@@ -83,7 +112,6 @@ Unstract comes well documented. You can get introduced to the [basics of Unstrac
 | <img src="docs/assets/3rd_party/palm.png" width="32"/>         | Google PaLM                 | ✅ Working |
 | <img src="docs/assets/3rd_party/anyscale.png" width="32"/>     | Anyscale                    | ✅ Working |
 | <img src="docs/assets/3rd_party/mistral_ai.png" width="32"/>   | Mistral AI                  | ✅ Working |
-| <img src="docs/assets/3rd_party/replicate.png" width="32"/>    | Replicate                   | 🗓️ Coming soon! |
 
 
 ### Vector Databases
@@ -106,15 +134,17 @@ Unstract comes well documented. You can get introduced to the [basics of Unstrac
 |<img src="docs/assets/3rd_party/azure_openai.png" width="32"/>| Azure OpenAI | ✅ Working  |
 |<img src="docs/assets/3rd_party/palm.png" width="32"/>| Google PaLM | ✅ Working  |
 |<img src="docs/assets/3rd_party/ollama.png" width="32"/>| Ollama | ✅ Working |
+|<img src="docs/assets/3rd_party/vertex_ai.png" width="32"/>    | VertexAI | ✅ Working |
+| <img src="docs/assets/3rd_party/bedrock.png" width="32"/>      | Bedrock                     | ✅ Working |
 
 ### Text Extractors
 
-|| Provider | Status |
-|---|---|---|
-|<img src="docs/assets/unstract_u_logo.png" width="32"/>| Unstract LLMWhisperer | ✅ Working |
-|<img src="docs/assets/3rd_party/unstructured_io.png" width="32"/>| Unstructured.io Community | ✅ Working |
+|| Provider                   | Status |
+|---|----------------------------|---|
+|<img src="docs/assets/unstract_u_logo.png" width="32"/>| Unstract LLMWhisperer V2   | ✅ Working |
+|<img src="docs/assets/3rd_party/unstructured_io.png" width="32"/>| Unstructured.io Community  | ✅ Working |
 |<img src="docs/assets/3rd_party/unstructured_io.png" width="32"/>| Unstructured.io Enterprise | ✅ Working |
-|<img src="docs/assets/3rd_party/llamaindex.png" width="32"/>| LlamaIndex Parse | ✅ Working |
+|<img src="docs/assets/3rd_party/llamaindex.png" width="32"/>| LlamaIndex Parse           | ✅ Working |
 
 ### ETL Sources
 
@@ -127,20 +157,19 @@ Unstract comes well documented. You can get introduced to the [basics of Unstrac
 |<img src="docs/assets/3rd_party/google_drive.png" width="32"/>| Google Drive | ✅ Working |
 |<img src="docs/assets/3rd_party/dropbox.png" width="32"/>| Dropbox | ✅ Working |
 |<img src="docs/assets/3rd_party/sftp.png" width="32"/>| SFTP | ✅ Working |
-|<img src="docs/assets/3rd_party/box.png" width="32"/>| Box | 🗓️ Coming soon! |
-|<img src="docs/assets/3rd_party/http.png" width="32"/>| HTTP/HTTPS | 🗓️ Coming soon! |
 
 ### ETL Destinations
 
-|| Provider | Status |
-|---|---|---|
-|<img src="docs/assets/3rd_party/snowflake.png" width="32"/>| Snowflake | ✅ Working |
-|<img src="docs/assets/3rd_party/amazon_redshift.png" width="32"/>| Amazon Redshift | ✅ Working |
-|<img src="docs/assets/3rd_party/google_bigquery.png" width="32"/>| Google BigQuery | ✅ Working |
-|<img src="docs/assets/3rd_party/postgres.png" width="32"/>| PostgreSQL | ✅ Working |
-|<img src="docs/assets/3rd_party/mysql.png" width="32"/>| MySQL | ✅ Working |
-|<img src="docs/assets/3rd_party/mariadb.png" width="32"/>| MariaDB | ✅ Working |
-|<img src="docs/assets/3rd_party/ms_sql.png" width="32"/>| Microsoft SQL Server | ✅ Working |
+|                                                                   | Provider             | Status |
+|-------------------------------------------------------------------|----------------------|---|
+| <img src="docs/assets/3rd_party/snowflake.png" width="32"/>       | Snowflake            | ✅ Working |
+| <img src="docs/assets/3rd_party/amazon_redshift.png" width="32"/> | Amazon Redshift      | ✅ Working |
+| <img src="docs/assets/3rd_party/google_bigquery.png" width="32"/> | Google BigQuery      | ✅ Working |
+| <img src="docs/assets/3rd_party/postgres.png" width="32"/>        | PostgreSQL           | ✅ Working |
+| <img src="docs/assets/3rd_party/mysql.png" width="32"/>           | MySQL                | ✅ Working |
+| <img src="docs/assets/3rd_party/mariadb.png" width="32"/>         | MariaDB              | ✅ Working |
+| <img src="docs/assets/3rd_party/ms_sql.png" width="32"/>          | Microsoft SQL Server | ✅ Working |
+| <img src="docs/assets/3rd_party/oracle.png" width="32"/>          | Oracle               | ✅ Working |
 
 ## 🙌 Contributing
 
@@ -154,9 +183,9 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for fur
 
 ## 🚨 Backup encryption key
 
-Do copy the value of `ENCRYPTION_KEY` config in either `backend/.env` or `platform-service/.env` file to a secure location.  
+Do copy the value of `ENCRYPTION_KEY` config in either `backend/.env` or `platform-service/.env` file to a secure location.
 
-Adapter credentials are encrypted by the platform using this key. Its loss or change will make all existing adapters inaccessible!  
+Adapter credentials are encrypted by the platform using this key. Its loss or change will make all existing adapters inaccessible!
 
 ## 📊 A note on analytics
 

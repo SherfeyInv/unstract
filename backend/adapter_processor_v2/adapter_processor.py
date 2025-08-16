@@ -1,18 +1,20 @@
 import json
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from account_v2.models import User
-from adapter_processor_v2.constants import AdapterKeys
+from cryptography.fernet import Fernet
+from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
+from platform_settings_v2.platform_auth_service import PlatformAuthenticationService
+from tenant_account_v2.organization_member_service import OrganizationMemberService
+
+from adapter_processor_v2.constants import AdapterKeys, AllowedDomains
 from adapter_processor_v2.exceptions import (
     InternalServiceError,
     InValidAdapterId,
     TestAdapterError,
 )
-from django.conf import settings
-from django.core.exceptions import ObjectDoesNotExist
-from platform_settings_v2.platform_auth_service import PlatformAuthenticationService
-from tenant_account_v2.organization_member_service import OrganizationMemberService
 from unstract.sdk.adapters.adapterkit import Adapterkit
 from unstract.sdk.adapters.base import Adapter
 from unstract.sdk.adapters.enums import AdapterTypes
@@ -22,6 +24,11 @@ from unstract.sdk.exceptions import SdkError
 from .models import AdapterInstance, UserDefaultAdapter
 
 logger = logging.getLogger(__name__)
+
+try:
+    from plugins.subscription.time_trials.subscription_adapter import add_unstract_key
+except ImportError:
+    add_unstract_key = None
 
 
 class AdapterProcessor:
@@ -37,30 +44,34 @@ class AdapterProcessor:
                 updated_adapters[0].get(AdapterKeys.JSON_SCHEMA)
             )
         else:
-            logger.error(
-                f"Invalid adapter Id : {adapter_id} while fetching JSON Schema"
-            )
+            logger.error(f"Invalid adapter Id : {adapter_id} while fetching JSON Schema")
             raise InValidAdapterId()
         return schema_details
 
     @staticmethod
-    def get_all_supported_adapters(type: str) -> list[dict[Any, Any]]:
+    def get_all_supported_adapters(user_email: str, type: str) -> list[dict[Any, Any]]:
         """Function to return list of all supported adapters."""
         supported_adapters = []
         updated_adapters = []
         updated_adapters = AdapterProcessor.__fetch_adapters_by_key_value(
             AdapterKeys.ADAPTER_TYPE, type
         )
+        is_special_user = any(
+            identifier in user_email for identifier in AllowedDomains.list()
+        )
+
         for each_adapter in updated_adapters:
+            adapter_id = each_adapter.get(AdapterKeys.ID)
+            if not is_special_user and adapter_id.startswith("noOp"):
+                continue
+
             supported_adapters.append(
                 {
-                    AdapterKeys.ID: each_adapter.get(AdapterKeys.ID),
+                    AdapterKeys.ID: adapter_id,
                     AdapterKeys.NAME: each_adapter.get(AdapterKeys.NAME),
                     AdapterKeys.DESCRIPTION: each_adapter.get(AdapterKeys.DESCRIPTION),
                     AdapterKeys.ICON: each_adapter.get(AdapterKeys.ICON),
-                    AdapterKeys.ADAPTER_TYPE: each_adapter.get(
-                        AdapterKeys.ADAPTER_TYPE
-                    ),
+                    AdapterKeys.ADAPTER_TYPE: each_adapter.get(AdapterKeys.ADAPTER_TYPE),
                 }
             )
         return supported_adapters
@@ -83,6 +94,11 @@ class AdapterProcessor:
             adapter_class = Adapterkit().get_adapter_class_by_adapter_id(adapter_id)
 
             if adapter_metadata.pop(AdapterKeys.ADAPTER_TYPE) == AdapterKeys.X2TEXT:
+                if (
+                    adapter_metadata.get(AdapterKeys.PLATFORM_PROVIDED_UNSTRACT_KEY)
+                    and add_unstract_key
+                ):
+                    adapter_metadata = add_unstract_key(adapter_metadata)
                 adapter_metadata[X2TextConstants.X2TEXT_HOST] = settings.X2TEXT_HOST
                 adapter_metadata[X2TextConstants.X2TEXT_PORT] = settings.X2TEXT_PORT
                 platform_key = PlatformAuthenticationService.get_active_platform_key()
@@ -99,9 +115,25 @@ class AdapterProcessor:
             )
 
     @staticmethod
+    def update_adapter_metadata(adapter_metadata_b: Any, **kwargs) -> Any:
+        if add_unstract_key:
+            encryption_secret: str = settings.ENCRYPTION_KEY
+            f: Fernet = Fernet(encryption_secret.encode("utf-8"))
+
+            adapter_metadata = json.loads(
+                f.decrypt(bytes(adapter_metadata_b).decode("utf-8"))
+            )
+            adapter_metadata = add_unstract_key(adapter_metadata, **kwargs)
+
+            adapter_metadata_b = f.encrypt(json.dumps(adapter_metadata).encode("utf-8"))
+            return adapter_metadata_b
+        return adapter_metadata_b
+
+    @staticmethod
     def __fetch_adapters_by_key_value(key: str, value: Any) -> Adapter:
         """Fetches a list of adapters that have an attribute matching key and
-        value."""
+        value.
+        """
         logger.info(f"Fetching adapter list for {key} with {value}")
         adapter_kit = Adapterkit()
         adapters = adapter_kit.get_adapters_list()
@@ -137,10 +169,8 @@ class AdapterProcessor:
                 )
 
             if default_triad.get(AdapterKeys.X2TEXT_DEFAULT, None):
-                user_default_adapter.default_x2text_adapter = (
-                    AdapterInstance.objects.get(
-                        pk=default_triad[AdapterKeys.X2TEXT_DEFAULT]
-                    )
+                user_default_adapter.default_x2text_adapter = AdapterInstance.objects.get(
+                    pk=default_triad[AdapterKeys.X2TEXT_DEFAULT]
                 )
 
             user_default_adapter.save()
@@ -188,7 +218,6 @@ class AdapterProcessor:
         - list[AdapterInstance]: A list of AdapterInstance objects that match
             the specified adapter type.
         """
-
         adapters: list[AdapterInstance] = AdapterInstance.objects.for_user(user).filter(
             adapter_type=adapter_type.value,
         )
@@ -197,8 +226,8 @@ class AdapterProcessor:
     @staticmethod
     def get_adapter_by_name_and_type(
         adapter_type: AdapterTypes,
-        adapter_name: Optional[str] = None,
-    ) -> Optional[AdapterInstance]:
+        adapter_name: str | None = None,
+    ) -> AdapterInstance | None:
         """Get the adapter instance by its name and type.
 
         Parameters:

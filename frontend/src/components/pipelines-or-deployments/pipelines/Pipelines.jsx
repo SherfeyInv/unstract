@@ -44,6 +44,13 @@ import { pipelineService } from "../pipeline-service.js";
 import { ManageKeys } from "../../deployments/manage-keys/ManageKeys.jsx";
 import usePipelineHelper from "../../../hooks/usePipelineHelper.js";
 import { NotificationModal } from "../notification-modal/NotificationModal.jsx";
+import { usePromptStudioStore } from "../../../store/prompt-studio-store";
+import { PromptStudioModal } from "../../common/PromptStudioModal";
+import { usePromptStudioService } from "../../api/prompt-studio-service";
+import {
+  useInitialFetchCount,
+  usePromptStudioModal,
+} from "../../../hooks/usePromptStudioFetchCount";
 
 function Pipelines({ type }) {
   const [tableData, setTableData] = useState([]);
@@ -66,6 +73,13 @@ function Pipelines({ type }) {
   const { getApiKeys, downloadPostmanCollection, copyUrl } =
     usePipelineHelper();
   const [openNotificationModal, setOpenNotificationModal] = useState(false);
+  const { count, isLoading, fetchCount } = usePromptStudioStore();
+  const { getPromptStudioCount } = usePromptStudioService();
+
+  const initialFetchComplete = useInitialFetchCount(
+    fetchCount,
+    getPromptStudioCount
+  );
 
   const handleFetchLogs = (page, pageSize) => {
     fetchExecutionLogs(
@@ -112,8 +126,7 @@ function Pipelines({ type }) {
   };
 
   const handleSync = (params) => {
-    const body = params;
-    body["pipeline_type"] = type.toUpperCase();
+    const body = { ...params, pipeline_type: type.toUpperCase() };
     const pipelineId = params?.pipeline_id;
     const fieldsToUpdate = {
       last_run_status: "processing",
@@ -123,18 +136,17 @@ function Pipelines({ type }) {
     handleSyncApiReq(body)
       .then((res) => {
         const data = res?.data?.pipeline;
-        fieldsToUpdate["last_run_status"] = data?.last_run_status;
-        fieldsToUpdate["last_run_time"] = data?.last_run_time;
+        fieldsToUpdate.last_run_status = data?.last_run_status;
+        fieldsToUpdate.last_run_time = data?.last_run_time;
         setAlertDetails({
           type: "success",
-          content: "Pipeline Synced Successfully",
+          content: "Pipeline Sync Initiated",
         });
       })
       .catch((err) => {
         setAlertDetails(handleException(err, "Failed to sync."));
-        const date = new Date();
-        fieldsToUpdate["last_run_status"] = "FAILURE";
-        fieldsToUpdate["last_run_time"] = date.toISOString();
+        fieldsToUpdate.last_run_status = "FAILURE";
+        fieldsToUpdate.last_run_time = new Date().toISOString();
       })
       .finally(() => {
         handleLoaderInTableData(fieldsToUpdate, pipelineId);
@@ -599,8 +611,18 @@ function Pipelines({ type }) {
     },
   ];
 
+  // Using the custom hook to manage modal state
+  const { showModal, handleModalClose } = usePromptStudioModal(
+    initialFetchComplete,
+    isLoading,
+    count
+  );
+
   return (
     <div className="p-or-d-layout">
+      {showModal && (
+        <PromptStudioModal onClose={handleModalClose} showModal={showModal} />
+      )}
       <Layout
         type={type}
         columns={columns}

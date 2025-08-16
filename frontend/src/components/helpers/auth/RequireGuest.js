@@ -1,11 +1,16 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
-import { publicRoutes, onboardCompleted } from "../../../helpers/GetStaticData";
+import {
+  publicRoutes,
+  onboardCompleted,
+  homePagePath,
+} from "../../../helpers/GetStaticData";
 import { useSessionStore } from "../../../store/session-store";
 let selectedProductStore;
 let isLlmWhisperer;
+let isVerticals;
 try {
-  selectedProductStore = require("../../../plugins/llm-whisperer/store/select-product-store.js");
+  selectedProductStore = require("../../../plugins/store/select-product-store.js");
 } catch {
   // do nothing
 }
@@ -23,12 +28,22 @@ const RequireGuest = () => {
   } catch (error) {
     // Do nothing
   }
+  try {
+    isVerticals =
+      selectedProductStore.useSelectedProductStore(
+        (state) => state?.selectedProduct
+      ) === "verticals";
+  } catch (error) {
+    // Do nothing
+  }
 
   let navigateTo = `/${orgName}/onboard`;
   if (isLlmWhisperer) {
     navigateTo = `/llm-whisperer/${orgName}/playground`;
+  } else if (isVerticals) {
+    navigateTo = `/verticals/`;
   } else if (onboardCompleted(adapters)) {
-    navigateTo = `/${orgName}/tools`;
+    navigateTo = `/${orgName}/${homePagePath}`;
   }
   if (
     sessionDetails.role === "unstract_reviewer" ||

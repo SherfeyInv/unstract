@@ -9,20 +9,19 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
+import logging
 import os
 from pathlib import Path
-from typing import Optional
-from urllib.parse import quote_plus
+from urllib.parse import urlparse
 
+import httpx
 from dotenv import find_dotenv, load_dotenv
 from utils.common_utils import CommonUtils
 
 missing_settings = []
 
 
-def get_required_setting(
-    setting_key: str, default: Optional[str] = None
-) -> Optional[str]:
+def get_required_setting(setting_key: str, default: str | None = None) -> str | None:
     """Get the value of an environment variable specified by the given key. Add
     missing keys to `missing_settings` so that exception can be raised at the
     end.
@@ -48,6 +47,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Load default log from env
 DEFAULT_LOG_LEVEL = os.environ.get("DEFAULT_LOG_LEVEL", "INFO")
 
+# Celery Broker Configuration
+CELERY_BROKER_BASE_URL = get_required_setting("CELERY_BROKER_BASE_URL")
+CELERY_BROKER_USER = get_required_setting("CELERY_BROKER_USER")
+CELERY_BROKER_PASS = get_required_setting("CELERY_BROKER_PASS")
+CELERY_BROKER_URL = str(
+    httpx.URL(CELERY_BROKER_BASE_URL).copy_with(
+        username=CELERY_BROKER_USER, password=CELERY_BROKER_PASS
+    )
+)
 
 ENV_FILE = find_dotenv()
 if ENV_FILE:
@@ -59,14 +67,11 @@ WORKFLOW_ACTION_EXPIRATION_TIME_IN_SECOND = os.environ.get(
     "WORKFLOW_ACTION_EXPIRATION_TIME_IN_SECOND", 10800
 )
 WEB_APP_ORIGIN_URL = os.environ.get("WEB_APP_ORIGIN_URL", "http://localhost:3000")
+parsed_url = urlparse(WEB_APP_ORIGIN_URL)
+WEB_APP_ORIGIN_URL_WITH_WILD_CARD = f"{parsed_url.scheme}://*.{parsed_url.netloc}"
+CORS_ALLOWED_ORIGINS = [WEB_APP_ORIGIN_URL]
 
-LOGIN_NEXT_URL = os.environ.get("LOGIN_NEXT_URL", "http://localhost:3000/org")
-LANDING_URL = os.environ.get("LANDING_URL", "http://localhost:3000/landing")
-ERROR_URL = os.environ.get("ERROR_URL", "http://localhost:3000/error")
-
-DJANGO_APP_BACKEND_URL = os.environ.get(
-    "DJANGO_APP_BACKEND_URL", "http://localhost:8000"
-)
+DJANGO_APP_BACKEND_URL = os.environ.get("DJANGO_APP_BACKEND_URL", "http://localhost:8000")
 INTERNAL_SERVICE_API_KEY = os.environ.get("INTERNAL_SERVICE_API_KEY")
 
 GOOGLE_STORAGE_ACCESS_KEY_ID = os.environ.get("GOOGLE_STORAGE_ACCESS_KEY_ID")
@@ -103,6 +108,8 @@ DB_PASSWORD = os.environ.get("DB_PASSWORD", "unstract_pass")
 DB_PORT = os.environ.get("DB_PORT", 5432)
 DB_SCHEMA = os.environ.get("DB_SCHEMA", "unstract")
 
+# Celery Backend Database Name (falls back to main DB when unset or empty)
+CELERY_BACKEND_DB_NAME = os.environ.get("CELERY_BACKEND_DB_NAME") or DB_NAME
 DEFAULT_ORGANIZATION = "default_org"
 FLIPT_BASE_URL = os.environ.get("FLIPT_BASE_URL", "http://localhost:9005")
 PLATFORM_HOST = os.environ.get("PLATFORM_SERVICE_HOST", "http://localhost")
@@ -117,8 +124,6 @@ X2TEXT_PORT = os.environ.get("X2TEXT_PORT", 3004)
 STRUCTURE_TOOL_IMAGE_URL = get_required_setting("STRUCTURE_TOOL_IMAGE_URL")
 STRUCTURE_TOOL_IMAGE_NAME = get_required_setting("STRUCTURE_TOOL_IMAGE_NAME")
 STRUCTURE_TOOL_IMAGE_TAG = get_required_setting("STRUCTURE_TOOL_IMAGE_TAG")
-WORKFLOW_DATA_DIR = os.environ.get("WORKFLOW_DATA_DIR")
-API_STORAGE_DIR = os.environ.get("API_STORAGE_DIR")
 CACHE_TTL_SEC = os.environ.get("CACHE_TTL_SEC", 10800)
 
 DEFAULT_AUTH_USERNAME = os.environ.get("DEFAULT_AUTH_USERNAME", "unstract")
@@ -132,8 +137,39 @@ LOG_HISTORY_CONSUMER_INTERVAL = int(
     get_required_setting("LOG_HISTORY_CONSUMER_INTERVAL", "60")
 )
 LOGS_BATCH_LIMIT = int(get_required_setting("LOGS_BATCH_LIMIT", "30"))
-CELERY_BROKER_URL = get_required_setting(
-    "CELERY_BROKER_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}"
+LOGS_EXPIRATION_TIME_IN_SECOND = int(
+    get_required_setting("LOGS_EXPIRATION_TIME_IN_SECOND", "86400")
+)
+EXECUTION_RESULT_TTL_SECONDS = int(
+    os.environ.get("EXECUTION_RESULT_TTL_SECONDS", 10800)
+)  # 3 hours
+EXECUTION_CACHE_TTL_SECONDS = int(
+    os.environ.get("EXECUTION_CACHE_TTL_SECONDS", 10800)
+)  # 3 hours
+FILE_EXECUTION_TRACKER_TTL_IN_SECOND = int(
+    os.environ.get("FILE_EXECUTION_TRACKER_TTL_IN_SECOND", 60 * 60 * 5)
+)
+FILE_EXECUTION_TRACKER_COMPLETED_TTL_IN_SECOND = int(
+    os.environ.get("FILE_EXECUTION_TRACKER_COMPLETED_TTL_IN_SECOND", 60 * 10)
+)  # 10 minutes
+
+INSTANT_WF_POLLING_TIMEOUT = int(
+    os.environ.get("INSTANT_WF_POLLING_TIMEOUT", "300")
+)  # 5 minutes
+
+# ETL Pipeline minimum schedule interval (in seconds)
+# Default: 1800 seconds (30 minutes)
+MIN_SCHEDULE_INTERVAL_SECONDS = int(os.environ.get("MIN_SCHEDULE_INTERVAL_SECONDS", 1800))
+
+# File processing batches
+MAX_PARALLEL_FILE_BATCHES = int(os.environ.get("MAX_PARALLEL_FILE_BATCHES", 1))
+# Upper limit for batch validation
+MAX_PARALLEL_FILE_BATCHES_MAX_VALUE = int(
+    os.environ.get("MAX_PARALLEL_FILE_BATCHES_MAX_VALUE", 100)
+)
+
+CELERY_RESULT_CHORD_RETRY_INTERVAL = int(
+    os.environ.get("CELERY_RESULT_CHORD_RETRY_INTERVAL", "3")
 )
 
 INDEXING_FLAG_TTL = int(get_required_setting("INDEXING_FLAG_TTL"))
@@ -155,21 +191,39 @@ ENCRYPTION_KEY = get_required_setting("ENCRYPTION_KEY")
 DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
-CSRF_TRUSTED_ORIGINS = [WEB_APP_ORIGIN_URL]
+CSRF_TRUSTED_ORIGINS = [WEB_APP_ORIGIN_URL, WEB_APP_ORIGIN_URL_WITH_WILD_CARD]
 CORS_ALLOW_ALL_ORIGINS = False
 
+# Request ID middleware settings
+LOG_REQUEST_ID_HEADER = "X-Request-ID"
+REQUEST_ID_RESPONSE_HEADER = "X-Request-ID"
+GENERATE_REQUEST_ID_IF_NOT_IN_HEADER = True
+NO_REQUEST_ID = "-"
+
+
+class OTelFieldFilter(logging.Filter):
+    def filter(self, record):
+        for attr in ["otelTraceID", "otelSpanID"]:
+            if not hasattr(record, attr):
+                setattr(record, attr, "-")
+        return True
+
+
+# Logging configuration
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "filters": {
         "request_id": {"()": "log_request_id.filters.RequestIDFilter"},
+        "otel_ids": {"()": "backend.settings.base.OTelFieldFilter"},
     },
     "formatters": {
         "enriched": {
             "format": (
                 "%(levelname)s : [%(asctime)s]"
                 "{module:%(module)s process:%(process)d "
-                "thread:%(thread)d request_id:%(request_id)s} :- %(message)s"
+                "thread:%(thread)d request_id:%(request_id)s "
+                "trace_id:%(otelTraceID)s span_id:%(otelSpanID)s} :- %(message)s"
             ),
         },
         "verbose": {
@@ -185,7 +239,7 @@ LOGGING = {
         "console": {
             "level": DEFAULT_LOG_LEVEL,  # Set the desired logging level here
             "class": "logging.StreamHandler",
-            "filters": ["request_id"],
+            "filters": ["request_id", "otel_ids"],
             "formatter": "enriched",
         },
     },
@@ -195,6 +249,7 @@ LOGGING = {
         # Set the desired logging level here as well
     },
 }
+
 SHARED_APPS = (
     # Multitenancy
     # "django_tenants",
@@ -210,6 +265,7 @@ SHARED_APPS = (
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.admindocs",
+    "django_filters",
     # Third party apps should go below this line,
     "rest_framework",
     # Connector OAuth
@@ -224,8 +280,8 @@ SHARED_APPS = (
     "django_celery_beat",
     # For additional helper commands
     "commands",
-)
-v2_apps = (
+    # health checks
+    "health",
     "migrating.v2",
     "connector_auth_v2",
     "tenant_account_v2",
@@ -235,6 +291,7 @@ v2_apps = (
     "workflow_manager.file_execution",
     "workflow_manager.endpoint_v2",
     "workflow_manager.workflow_v2",
+    "workflow_manager.execution",
     "tool_instance_v2",
     "pipeline_v2",
     "platform_settings_v2",
@@ -248,8 +305,9 @@ v2_apps = (
     "prompt_studio.prompt_studio_output_manager_v2",
     "prompt_studio.prompt_studio_document_manager_v2",
     "prompt_studio.prompt_studio_index_manager_v2",
+    "tags",
+    "configuration",
 )
-SHARED_APPS += v2_apps
 TENANT_APPS = []
 
 INSTALLED_APPS = list(SHARED_APPS) + [
@@ -305,7 +363,7 @@ DATABASES = {
 }
 
 MIDDLEWARE = [
-    "log_request_id.middleware.RequestIDMiddleware",
+    "middleware.request_id.CustomRequestIDMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     TENANT_MIDDLEWARE,
     "django.middleware.security.SecurityMiddleware",
@@ -322,7 +380,7 @@ MIDDLEWARE = [
     "middleware.cache_control.CacheControlMiddleware",
 ]
 
-TENANT_SUBFOLDER_PREFIX = f"/{PATH_PREFIX}/unstract"
+TENANT_SUBFOLDER_PREFIX = f"{PATH_PREFIX}/unstract"
 SHOW_PUBLIC_IF_NO_TENANT_FOUND = True
 
 TEMPLATES = [
@@ -367,20 +425,6 @@ RQ_QUEUES = {
     "default": {"USE_REDIS_CACHE": "default"},
 }
 
-
-# CELERY_RESULT_BACKEND = f"redis://{REDIS_HOST}:{REDIS_PORT}/1"
-# Postgres as result backend
-CELERY_RESULT_BACKEND = (
-    f"db+postgresql://{DB_USER}:{quote_plus(DB_PASSWORD)}"
-    f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-)
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
-CELERY_TASK_MAX_RETRIES = 3
-CELERY_TASK_RETRY_BACKOFF = 60  # Time in seconds before retrying the task
-
 # Feature Flag
 FEATURE_FLAG_SERVICE_URL = {"evaluate": f"{FLIPT_BASE_URL}/api/v1/flags/evaluate/"}
 
@@ -393,13 +437,13 @@ AUTH_PASSWORD_VALIDATORS = [
         "UserAttributeSimilarityValidator",
     },
     {
-        "NAME": "django.contrib.auth.password_validation." "MinimumLengthValidator",
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        "NAME": "django.contrib.auth.password_validation." "CommonPasswordValidator",
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        "NAME": "django.contrib.auth.password_validation." "NumericPasswordValidator",
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
@@ -427,9 +471,21 @@ STATIC_ROOT = os.path.join(BASE_DIR, "static")
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
     "DEFAULT_PERMISSION_CLASSES": [],  # TODO: Update once auth is figured
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
     "EXCEPTION_HANDLER": "middleware.exception.drf_logging_exc_handler",
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.OrderingFilter",
+    ],
+    # For API versioning
+    "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.URLPathVersioning",
+    "DEFAULT_VERSION": "v1",
+    "ALLOWED_VERSIONS": ["v1"],
+    "VERSION_PARAM": "version",
 }
 
 # These paths will work without authentication
@@ -446,6 +502,11 @@ WHITELISTED_PATHS = [f"/{PATH_PREFIX}{PATH}" for PATH in WHITELISTED_PATHS_LIST]
 # White lists workflow-api-deployment path
 WHITELISTED_PATHS.append(f"/{API_DEPLOYMENT_PATH_PREFIX}")
 
+# Whitelisting health check API
+WHITELISTED_PATHS.append("/health")
+
+# These path will work without organization in request
+ORGANIZATION_MIDDLEWARE_WHITELISTED_PATHS = []
 
 # API Doc Generator Settings
 # https://drf-yasg.readthedocs.io/en/stable/settings.html
@@ -468,7 +529,7 @@ for key in [
     "GOOGLE_OAUTH2_KEY",
     "GOOGLE_OAUTH2_SECRET",
 ]:
-    exec("SOCIAL_AUTH_{key} = os.environ.get('{key}')".format(key=key))
+    exec(f"SOCIAL_AUTH_{key} = os.environ.get('{key}')")
 
 SOCIAL_AUTH_PIPELINE = (
     # Checks if user is authenticated
@@ -501,3 +562,5 @@ if missing_settings:
         missing_settings
     )
     raise ValueError(ERROR_MESSAGE)
+
+ENABLE_HIGHLIGHT_API_DEPLOYMENT = os.environ.get("ENABLE_HIGHLIGHT_API_DEPLOYMENT", False)

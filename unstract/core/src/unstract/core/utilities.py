@@ -1,13 +1,13 @@
 import logging
 import os
-from typing import Optional
+import uuid
 
 logger = logging.getLogger()
 
 
 class UnstractUtils:
     @staticmethod
-    def get_env(env_key: str, default: Optional[str] = None, raise_err=False) -> str:
+    def get_env(env_key: str, default: str | None = None, raise_err=False) -> str:
         """Returns the value of an env variable.
 
         If its empty or None, raises an error
@@ -29,14 +29,44 @@ class UnstractUtils:
 
     @staticmethod
     def build_tool_container_name(
-        tool_image: str, tool_version: str, run_id: str
+        tool_image: str,
+        tool_version: str,
+        file_execution_id: str,
+        retry_count: int | None = None,
     ) -> str:
-        container_name = f"{tool_image.split('/')[-1]}-{tool_version}-{run_id}"
+        tool_name = tool_image.split("/")[-1]
+        # To avoid duplicate name collision
+        if retry_count:
+            unique_suffix = retry_count
+        else:
+            unique_suffix = uuid.uuid4().hex[:6]
+
+        container_name = f"{tool_name}-{tool_version}-{unique_suffix}-{file_execution_id}"
 
         # To support limits of container clients like K8s
         if len(container_name) > 63:
             logger.warning(
                 f"Container name exceeds 63 char limit for '{container_name}', "
-                "truncating to 63 chars. There might be collisions in container names"
+                "truncating to 63 chars. There might be collisions in container names."
+                f"Truncated container name: {container_name[:63]}"
             )
         return container_name[:63]
+
+
+## Static utility functions  ##
+def redact_sensitive_string(str_to_redact: str, reveal_length: int = 4) -> str:
+    """Hides sensitive information partially. Useful for logging keys.
+
+    Args:
+        str_to_redact (str): String to redact
+
+    Returns:
+        str: Redacted string
+    """
+    if reveal_length < 0:
+        raise ValueError("Reveal length must be a non-negative integer")
+
+    redacted_length = max(len(str_to_redact) - reveal_length, 0)
+    revealed_part = str_to_redact[:reveal_length]
+    redacted_part = "x" * redacted_length
+    return revealed_part + redacted_part

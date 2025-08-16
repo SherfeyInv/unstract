@@ -8,6 +8,7 @@ import {
   Row,
   Select,
   Space,
+  Tag,
   Typography,
 } from "antd";
 import { useEffect, useRef, useState } from "react";
@@ -18,8 +19,7 @@ import { useCustomToolStore } from "../../../store/custom-tool-store";
 import { Header } from "./Header";
 import { OutputForIndex } from "./OutputForIndex";
 import { PromptOutput } from "./PromptOutput";
-import { TABLE_ENFORCE_TYPE, RECORD_ENFORCE_TYPE } from "./constants";
-import usePromptOutput from "../../../hooks/usePromptOutput";
+import { TABLE } from "./constants";
 
 let TableExtractionSettingsBtn;
 try {
@@ -32,6 +32,8 @@ try {
 function PromptCardItems({
   promptDetails,
   enforceTypeList,
+  allTableSettings,
+  setAllTableSettings,
   promptKey,
   setPromptKey,
   promptText,
@@ -53,6 +55,7 @@ function PromptCardItems({
   promptRunStatus,
   coverageCountData,
   isChallenge,
+  handleSelectHighlight,
 }) {
   const {
     llmProfiles,
@@ -63,11 +66,11 @@ function PromptCardItems({
     isSimplePromptStudio,
     isPublicSource,
     adapters,
-    defaultLlmProfile,
+    selectedHighlight,
+    details,
     singlePassExtractMode,
   } = useCustomToolStore();
 
-  const { generatePromptOutputKey } = usePromptOutput();
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [expandCard, setExpandCard] = useState(true);
@@ -80,24 +83,20 @@ function PromptCardItems({
   const isNotSingleLlmProfile = llmProfiles.length > 1;
   const divRef = useRef(null);
   const [enforceType, setEnforceType] = useState("");
+  const [tableSettings, setTableSettings] = useState({});
   const promptId = promptDetails?.prompt_id;
-  const docId = selectedDoc?.document_id;
-  const promptProfile = promptDetails?.profile_manager || defaultLlmProfile;
-  const promptOutputKey = generatePromptOutputKey(
-    promptId,
-    docId,
-    promptProfile,
-    singlePassExtractMode,
-    true
-  );
-  const promptCoverage =
-    promptOutputs[promptOutputKey]?.coverage || coverageCountData;
 
   useEffect(() => {
     if (enforceType !== promptDetails?.enforce_type) {
       setEnforceType(promptDetails?.enforce_type);
     }
   }, [promptDetails]);
+
+  useEffect(() => {
+    setTableSettings(
+      allTableSettings.find((item) => item.prompt_id === promptId) || {}
+    );
+  }, [allTableSettings]);
 
   const getModelOrAdapterId = (profile, adapters) => {
     const result = { conf: {} };
@@ -122,6 +121,32 @@ function PromptCardItems({
     });
     return result;
   };
+
+  const getUpdatedCoverage = (promptId, singlePass, promptOutputs) => {
+    let updatedCoverage = null;
+    Object.keys(promptOutputs).forEach((key) => {
+      const [keyPromptId, , , keyIsSinglePass] = key.split("__"); // Destructure the key parts
+
+      // Check if the key matches the criteria
+      if (keyPromptId === promptId && keyIsSinglePass === String(singlePass)) {
+        const currentCoverage = promptOutputs[key]?.coverage || [];
+
+        // Update the highestCoverage if the current one is longer
+        if (
+          !updatedCoverage ||
+          currentCoverage.length > updatedCoverage.length
+        ) {
+          updatedCoverage = currentCoverage;
+        }
+      }
+    });
+
+    return updatedCoverage;
+  };
+
+  const promptCoverage =
+    getUpdatedCoverage(promptId, singlePassExtractMode, promptOutputs) ||
+    coverageCountData;
 
   const getAdapterInfo = async (adapterData) => {
     // If simple prompt studio, return early
@@ -159,7 +184,13 @@ function PromptCardItems({
   }, [llmProfiles, selectedLlmProfileId, enabledProfiles]);
 
   return (
-    <Card className="prompt-card">
+    <Card
+      className={`prompt-card ${
+        details?.enable_highlight &&
+        selectedHighlight?.highlightedPrompt === promptDetails?.prompt_id &&
+        "highlighted-prompt"
+      }`}
+    >
       <div className="prompt-card-div prompt-card-bg-col1 prompt-card-rad">
         <Space direction="vertical" className="width-100" ref={divRef}>
           <Header
@@ -231,14 +262,29 @@ function PromptCardItems({
                       </Button>
                     </Space>
                     <Space>
-                      {(enforceType === TABLE_ENFORCE_TYPE ||
-                        enforceType === RECORD_ENFORCE_TYPE) &&
-                        TableExtractionSettingsBtn && (
-                          <TableExtractionSettingsBtn
-                            promptId={promptDetails?.prompt_id}
-                            enforceType={enforceType}
-                          />
+                      {details?.enable_highlight &&
+                        ["table", "record"].includes(enforceType) && (
+                          <Tag
+                            color="red"
+                            style={{
+                              whiteSpace: "normal",
+                              wordWrap: "break-word",
+                              minWidth: "200px",
+                            }}
+                          >
+                            Highlighting is not supported when enforce type is{" "}
+                            {enforceType}
+                          </Tag>
                         )}
+                    </Space>
+                    <Space>
+                      {enforceType === TABLE && TableExtractionSettingsBtn && (
+                        <TableExtractionSettingsBtn
+                          promptId={promptDetails?.prompt_id}
+                          enforceType={enforceType}
+                          setAllTableSettings={setAllTableSettings}
+                        />
+                      )}
                       <Select
                         className="prompt-card-select-type"
                         size="small"
@@ -274,9 +320,11 @@ function PromptCardItems({
               isNotSingleLlmProfile={isNotSingleLlmProfile}
               setIsIndexOpen={setIsIndexOpen}
               enforceType={enforceType}
+              tableSettings={tableSettings}
               promptOutputs={promptOutputs}
               promptRunStatus={promptRunStatus}
               isChallenge={isChallenge}
+              handleSelectHighlight={handleSelectHighlight}
             />
           </Row>
         </Collapse.Panel>
@@ -293,6 +341,8 @@ function PromptCardItems({
 PromptCardItems.propTypes = {
   promptDetails: PropTypes.object.isRequired,
   enforceTypeList: PropTypes.array,
+  allTableSettings: PropTypes.array,
+  setAllTableSettings: PropTypes.func,
   promptKey: PropTypes.text,
   setPromptKey: PropTypes.func.isRequired,
   promptText: PropTypes.text,
@@ -314,6 +364,7 @@ PromptCardItems.propTypes = {
   promptRunStatus: PropTypes.object.isRequired,
   coverageCountData: PropTypes.object.isRequired,
   isChallenge: PropTypes.bool.isRequired,
+  handleSelectHighlight: PropTypes.func.isRequired,
 };
 
 export { PromptCardItems };

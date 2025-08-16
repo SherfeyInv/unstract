@@ -15,6 +15,9 @@ prompt_studio_detail = PromptStudioCoreView.as_view(
     }
 )
 prompt_studio_choices = PromptStudioCoreView.as_view({"get": "get_select_choices"})
+prompt_studio_retrieval_strategies = PromptStudioCoreView.as_view(
+    {"get": "get_retrieval_strategies"}
+)
 prompt_studio_profiles = PromptStudioCoreView.as_view(
     {"get": "list_profiles", "patch": "make_profile_default"}
 )
@@ -48,6 +51,10 @@ prompt_studio_export = PromptStudioCoreView.as_view(
     {"post": "export_tool", "get": "export_tool_info"}
 )
 
+prompt_studio_project_transfer = PromptStudioCoreView.as_view(
+    {"get": "export_project", "post": "import_project"}
+)
+
 
 urlpatterns = format_suffix_patterns(
     [
@@ -61,6 +68,11 @@ urlpatterns = format_suffix_patterns(
             "prompt-studio/select_choices/",
             prompt_studio_choices,
             name="prompt-studio-choices",
+        ),
+        path(
+            "prompt-studio/<uuid:pk>/get_retrieval_strategies/",
+            prompt_studio_retrieval_strategies,
+            name="prompt-studio-retrieval-strategies",
         ),
         path(
             "prompt-studio/prompt-studio-profile/<uuid:pk>/",
@@ -79,9 +91,7 @@ urlpatterns = format_suffix_patterns(
         ),
         path(
             "prompt-studio/index-document/<uuid:pk>",
-            method_decorator(transaction.non_atomic_requests)(
-                prompt_studio_prompt_index
-            ),
+            method_decorator(transaction.non_atomic_requests)(prompt_studio_prompt_index),
             name="prompt-studio-prompt-index",
         ),
         path(
@@ -113,6 +123,16 @@ urlpatterns = format_suffix_patterns(
             "prompt-studio/export/<uuid:pk>",
             prompt_studio_export,
             name="prompt_studio_export",
+        ),
+        path(
+            "prompt-studio/project-transfer/<uuid:pk>",
+            prompt_studio_project_transfer,
+            name="prompt_studio_project_transfer",
+        ),
+        path(
+            "prompt-studio/project-transfer/",
+            prompt_studio_project_transfer,
+            name="prompt_studio_project_transfer_import",
         ),
     ]
 )

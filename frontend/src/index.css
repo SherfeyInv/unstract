@@ -15,6 +15,10 @@ body {
   min-width: 1024px;
 }
 
+.page-bg-2 {
+  background-color: var(--page-bg-2);
+}
+
 .center {
   display: grid;
   width: inherit;
@@ -123,12 +127,32 @@ body {
   height: 100%;
 }
 
+.height-20 {
+  height: 20px;
+}
+
+.height-40 {
+  height: 40px;
+}
+
+.height-50 {
+  height: 50px;
+}
+
 .pad-right-6 {
   padding-right: 6px;
 }
 
 .pad-left-6 {
   padding-left: 6px;
+}
+
+.pad-top-20 {
+  padding-top: 20px;
+}
+
+.pad-bottom-20 {
+  padding-bottom: 20px;
 }
 
 .cur-pointer {
@@ -178,4 +202,46 @@ body {
 
 .text-align-center {
   text-align: center;
+}
+
+.mar-24 {
+  margin: 24px;
+}
+
+.mar-16 {
+  margin: 16px;
+}
+
+.pad-24 {
+  padding: 24px;
+}
+
+.mar-bottom-16 {
+  margin-bottom: 16px;
+}
+
+.mar-top-24 {
+  margin-top: 24px;
+}
+
+.height-100vh {
+  height: 100vh;
+}
+
+.mar-bottom-12{
+  margin-bottom: 12px;
+}
+
+.mar-0{
+  margin: 0;
+}
+
+.fullscreen-loader {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  background-color: #ffffff;
+  z-index: 2000;
 }

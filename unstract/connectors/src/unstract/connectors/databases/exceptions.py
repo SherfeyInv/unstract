@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 from unstract.connectors.exceptions import ConnectorBaseException
 
@@ -19,13 +19,15 @@ class UnstractDBConnectorException(ConnectorBaseException):
 
 
 class InvalidSyntaxException(UnstractDBConnectorException):
-
     def __init__(self, detail: Any, database: Any) -> None:
         default_detail = (
-            f"Error creating/writing to {database}. Syntax incorrect. "
+            f"Error creating/writing to `{database}`. Syntax incorrect. "
             f"Please check your table-name or schema. "
         )
-        super().__init__(detail=default_detail)
+        final_detail = (
+            f"{default_detail}\nDetails: {detail}" if detail else default_detail
+        )
+        super().__init__(detail=final_detail)
 
 
 class InvalidSchemaException(UnstractDBConnectorException):
@@ -53,20 +55,15 @@ class ValueTooLongException(UnstractDBConnectorException):
 
 
 class FeatureNotSupportedException(UnstractDBConnectorException):
-
     def __init__(self, detail: Any, database: str) -> None:
         default_detail = (
-            f"Error creating/writing to {database}. "
-            f"Feature not supported sql error. "
+            f"Error creating/writing to {database}. Feature not supported sql error. "
         )
         super().__init__(detail=default_detail)
 
 
 class SnowflakeProgrammingException(UnstractDBConnectorException):
-
-    def __init__(
-        self, detail: Any, database: str, table_name: str, schema: str
-    ) -> None:
+    def __init__(self, detail: Any, database: str, table_name: str, schema: str) -> None:
         default_detail = (
             f"Error creating/writing to `{database}.{schema}.{table_name}' \n"
             f"Please make sure all the columns exist in your table as per destination "
@@ -76,7 +73,6 @@ class SnowflakeProgrammingException(UnstractDBConnectorException):
 
 
 class BigQueryForbiddenException(UnstractDBConnectorException):
-
     def __init__(self, detail: Any, table_name: str) -> None:
         default_detail = (
             f"Error creating/writing to {table_name}. "
@@ -86,7 +82,6 @@ class BigQueryForbiddenException(UnstractDBConnectorException):
 
 
 class BigQueryNotFoundException(UnstractDBConnectorException):
-
     def __init__(self, detail: str, table_name: str) -> None:
         default_detail = (
             f"Error creating/writing to {table_name}. "
@@ -96,13 +91,12 @@ class BigQueryNotFoundException(UnstractDBConnectorException):
 
 
 class ColumnMissingException(UnstractDBConnectorException):
-
     def __init__(
         self,
         detail: Any,
         database: Any,
         table_name: str,
-        schema: Optional[str] = None,
+        schema: str | None = None,
     ) -> None:
         schema_part = f".{schema}" if schema else ""
         default_detail = (
@@ -110,4 +104,10 @@ class ColumnMissingException(UnstractDBConnectorException):
             f"Please make sure all the columns exist in your table "
             f"as per the destination DB configuration.\n"
         )
+        super().__init__(detail=default_detail)
+
+
+class OperationalException(UnstractDBConnectorException):
+    def __init__(self, detail: Any, database: str) -> None:
+        default_detail = f"Error creating/writing to {database}. Operational error. "
         super().__init__(detail=default_detail)

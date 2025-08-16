@@ -19,9 +19,10 @@ let SimplePromptStudioHelper;
 let SimplePromptStudio;
 let SpsLanding;
 let SpsUpload;
-let TrialRoutes;
 let PaymentSuccessful;
 let SelectProduct;
+let UnstractSubscriptionEndPage;
+let CustomPlanCheckoutPage;
 try {
   SimplePromptStudioHelper =
     require("../plugins/simple-prompt-studio/SimplePromptStudioHelper.jsx").SimplePromptStudioHelper;
@@ -49,6 +50,14 @@ try {
   // Do nothing, Not-found Page will be triggered.
 }
 
+let verticalsRouter;
+try {
+  verticalsRouter =
+    require("../plugins/routes/useVerticalsRoutes.js").useVerticalsRoutes;
+} catch (err) {
+  // Do nothing, Not-found Page will be triggered.
+}
+
 try {
   SelectProduct =
     require("../plugins/select-product/SelectProduct.jsx").SelectProduct;
@@ -57,8 +66,15 @@ try {
 }
 
 try {
-  TrialRoutes =
-    require("../plugins/subscription/trial-page/TrialEndPage.jsx").TrialEndPage;
+  UnstractSubscriptionEndPage =
+    require("../plugins/unstract-subscription/pages/UnstractSubscriptionEndPage.jsx").UnstractSubscriptionEndPage;
+} catch (err) {
+  // Do nothing, Not-found Page will be triggered.
+}
+
+try {
+  CustomPlanCheckoutPage =
+    require("../plugins/unstract-subscription/pages/CustomPlanCheckoutPage.jsx").CustomPlanCheckoutPage;
 } catch (err) {
   // Do nothing, Not-found Page will be triggered.
 }
@@ -116,22 +132,31 @@ function Router() {
         {SelectProduct && (
           <Route path="selectProduct" element={<SelectProduct />} />
         )}
-        {TrialRoutes && (
-          <Route path="/trial-expired" element={<TrialRoutes />} />
+        {UnstractSubscriptionEndPage && (
+          <Route
+            path="/subscription-expired"
+            element={<UnstractSubscriptionEndPage />}
+          />
         )}
         {PaymentSuccessful && (
           <Route path="/payment/success" element={<PaymentSuccessful />} />
         )}
+        {CustomPlanCheckoutPage && (
+          <Route
+            path="/subscription/custom"
+            element={<CustomPlanCheckoutPage />}
+          />
+        )}
         <Route path="" element={<RequireAuth />}>
-          <Route path="">{MainAppRoute}</Route>
+          {MainAppRoute}
           {llmWhispererRouter && (
             <Route path="llm-whisperer">{llmWhispererRouter()}</Route>
           )}
         </Route>
       </Route>
-
       <Route path="*" element={<NotFound />} />
       <Route path="oauth-status" element={<OAuthStatus />} />
+      {verticalsRouter && verticalsRouter()}
     </Routes>
   );
 }

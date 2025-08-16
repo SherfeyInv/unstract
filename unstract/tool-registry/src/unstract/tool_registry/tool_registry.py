@@ -1,25 +1,15 @@
-import json
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
-from unstract.tool_registry.constants import (
-    FeatureFlag,
-    PropKey,
-    ToolJsonField,
-    ToolKey,
-)
+from unstract.sdk.exceptions import FileStorageError
+from unstract.sdk.file_storage import EnvHelper, FileStorage, StorageType
+from unstract.tool_registry.constants import PropKey, ToolJsonField, ToolKey
 from unstract.tool_registry.dto import Tool
 from unstract.tool_registry.exceptions import InvalidToolURLException
 from unstract.tool_registry.helper import ToolRegistryHelper
 from unstract.tool_registry.schema_validator import JsonSchemaValidator
 from unstract.tool_registry.tool_utils import ToolUtils
-
-from unstract.flags.feature_flag import check_feature_flag_status
-
-if check_feature_flag_status(FeatureFlag.REMOTE_FILE_STORAGE):
-    from unstract.sdk.exceptions import FileStorageError
-    from unstract.sdk.file_storage import FileStorageProvider, PermanentFileStorage
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +48,8 @@ class ToolRegistry:
                 "registry JSONs and YAML to a directory and set the env."
             )
 
-        if check_feature_flag_status(FeatureFlag.REMOTE_FILE_STORAGE):
-            self.fs = self._get_storage_credentials()
-        else:
-            self.fs = None
+        self.fs = self._get_storage_credentials()
+
         self.helper = ToolRegistryHelper(
             registry=os.path.join(directory, registry_file),
             private_tools_file=os.path.join(directory, private_tools),
@@ -69,30 +57,23 @@ class ToolRegistry:
             fs=self.fs,
         )
 
-    if check_feature_flag_status(FeatureFlag.REMOTE_FILE_STORAGE):
-
-        def _get_storage_credentials(self) -> PermanentFileStorage:
-            try:
-                # Not creating constants for now for the keywords below as this
-                # logic ought to change in the near future to maintain unformity
-                # across services
-                file_storage = json.loads(
-                    os.environ.get("TOOL_REGISTRY_STORAGE_CREDENTIALS", {})
-                )
-                provider = FileStorageProvider(file_storage["provider"])
-                credentials = file_storage.get("credentials", {})
-                return PermanentFileStorage(provider, **credentials)
-            except KeyError as e:
-                logger.error(f"Required credentials is missing in the env: {str(e)}")
-                raise e
-            except FileStorageError as e:
-                logger.error(
-                    "Error while initialising storage: %s",
-                    e,
-                    stack_info=True,
-                    exc_info=True,
-                )
-                raise e
+    def _get_storage_credentials(self) -> FileStorage:
+        try:
+            fs = EnvHelper.get_storage(
+                StorageType.PERMANENT, "TOOL_REGISTRY_STORAGE_CREDENTIALS"
+            )
+            return fs
+        except KeyError as e:
+            logger.error(f"Required credentials is missing in the env: {str(e)}")
+            raise e
+        except FileStorageError as e:
+            logger.error(
+                "Error while initialising storage: %s",
+                e,
+                stack_info=True,
+                exc_info=True,
+            )
+            raise e
 
     def load_all_tools_to_disk(self) -> None:
         self.helper.load_all_tools_to_disk()
@@ -158,7 +139,7 @@ class ToolRegistry:
             tools_list.append(tool_data)
         return tools_list
 
-    def get_tool_by_uid(self, uid: str) -> Optional[Tool]:
+    def get_tool_by_uid(self, uid: str) -> Tool | None:
         """Get tools from json.
 
         Args:
@@ -217,7 +198,7 @@ class ToolRegistry:
         else:
             tools = self.helper.get_all_tools_from_disk()
             for tool, configuration in tools.items():
-                data: Optional[dict[str, Any]] = configuration.get("properties")
+                data: dict[str, Any] | None = configuration.get("properties")
                 icon = configuration.get("icon", "")
                 if not data:
                     continue
@@ -249,10 +230,10 @@ class ToolRegistry:
                 tool_meta = ToolUtils.get_tool_meta_from_tool_url(registry_tool=tool)
                 if not tool_meta:
                     continue
-                properties: Optional[dict[str, Any]] = self.helper.get_tool_properties(
+                properties: dict[str, Any] | None = self.helper.get_tool_properties(
                     tool_meta=tool_meta
                 )
-                spec: Optional[dict[str, Any]] = self.helper.get_tool_spec(
+                spec: dict[str, Any] | None = self.helper.get_tool_spec(
                     tool_meta=tool_meta
                 )
                 icon = self.helper.get_tool_icon(tool_meta=tool_meta)

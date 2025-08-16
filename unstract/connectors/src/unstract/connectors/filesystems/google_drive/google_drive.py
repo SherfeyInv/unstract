@@ -98,6 +98,33 @@ class GoogleDriveFS(UnstractFileSystem):
     def get_fsspec_fs(self) -> GDriveFileSystem:
         return self.drive
 
+    def extract_metadata_file_hash(self, metadata: dict[str, Any]) -> str | None:
+        """Extracts a unique file hash from metadata.
+
+        Args:
+            metadata (dict): Metadata dictionary obtained from fsspec.
+
+        Returns:
+            Optional[str]: The file hash in hexadecimal format or None if not found.
+        """
+        # Extracts checksum for GDrive
+        file_hash = metadata.get("checksum")
+        if file_hash:
+            return file_hash.lower()
+        logger.error(f"[Google Drive] File hash not found for the metadata: {metadata}")
+        return None
+
+    def is_dir_by_metadata(self, metadata: dict[str, Any]) -> bool:
+        """Check if the given path is a directory.
+
+        Args:
+            metadata (dict): Metadata dictionary obtained from fsspec or cloud API.
+
+        Returns:
+            bool: True if the path is a directory, False otherwise.
+        """
+        return metadata.get("type") == "directory"
+
     def test_credentials(self) -> bool:
         """To test credentials for Google Drive."""
         is_dir = False
@@ -122,3 +149,29 @@ class GoogleDriveFS(UnstractFileSystem):
             raise ValueError("root_path is required to get root_dir for Google Drive")
         input_dir = str(Path(root_path, input_dir.lstrip("/")))
         return f"{input_dir.strip('/')}/"
+
+    # TODO: This should be removed later once the root casue is fixed.
+    # This is a bandaid fix to avoid duplicate file upload in google drive.
+    # GDrive allows multiple files with same name in a single folder which is
+    # causing file duplication.
+    # Below logic removes the file if already exists to avoid duplication.
+    # Since other conenctor behaviour is to replace file sif exists
+    # the deletion lgoci should be okay here.
+    def upload_file_to_storage(self, source_path: str, destination_path: str) -> None:
+        """Method to upload filepath from tool to destination connector directory.
+        If a file already exists at the destination path, it will be deleted first.
+
+        Args:
+            source_path (str): local path of file to be uploaded, coming from tool
+            destination_path (str): target path in the storage where the file will be
+            uploaded
+        """
+        normalized_path = os.path.normpath(destination_path)
+        destination_connector_fs = self.get_fsspec_fs()
+
+        # Check if file exists and delete it
+        if destination_connector_fs.exists(normalized_path):
+            destination_connector_fs.delete(normalized_path)
+
+        # Call parent class's upload method
+        super().upload_file_to_storage(source_path, destination_path)

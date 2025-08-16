@@ -1,6 +1,15 @@
 import moment from "moment";
 import momentTz from "moment-timezone";
+import { format, parseISO } from "date-fns";
 import { v4 as uuidv4 } from "uuid";
+
+let cloudHomePagePath;
+try {
+  cloudHomePagePath =
+    require("../plugins/unstract-subscription/helper/constants").cloudHomePagePath;
+} catch (err) {
+  // Ignore if plugin not available
+}
 
 const THEME = {
   DARK: "dark",
@@ -162,21 +171,30 @@ const listOfAppDeployments = [
   },
 ];
 
-const getReadableDateAndTime = (timestamp) => {
+const getReadableDateAndTime = (timestamp, includeTime = true) => {
   const currentDate = new Date(timestamp);
 
-  // Options for formatting the date and time
-  const options = {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
+  if (isNaN(currentDate)) {
+    return "Invalid date";
+  }
+
+  // Options for formatting the date
+  const dateOptions = { year: "numeric", month: "long", day: "numeric" };
+  const formattedDate = currentDate.toLocaleDateString("en-US", dateOptions);
+
+  if (!includeTime) {
+    return formattedDate;
+  }
+
+  // Options for formatting the time
+  const timeOptions = {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
     timeZoneName: "short",
   };
-  const formattedDate = currentDate.toLocaleDateString("en-US", options);
-  const formattedTime = currentDate.toLocaleTimeString("en-US", options);
+  const formattedTime = currentDate.toLocaleTimeString("en-US", timeOptions);
+
   return formattedDate + ", " + formattedTime;
 };
 
@@ -218,23 +236,19 @@ const deploymentsStaticContent = {
     title: "Unstructured to Structured ETL Pipelines",
     modalTitle: "Deploy ETL Pipeline",
     addBtn: "ETL Pipeline",
-    isLogsRequired: true,
   },
   task: {
     title: "Unstructured to Structured Task Pipelines",
     modalTitle: "Deploy Task Pipeline",
     addBtn: "Task Pipeline",
-    isLogsRequired: true,
   },
   api: {
     title: "API Deployments",
     addBtn: "API Deployment",
-    isLogsRequired: false,
   },
   app: {
     title: "App Deployments",
     addBtn: "App Deployment",
-    isLogsRequired: false,
   },
 };
 
@@ -262,13 +276,19 @@ const getTimeForLogs = () => {
 };
 
 const getDateTimeString = (timestamp) => {
-  // Convert to milliseconds
+  // Check if the timestamp is a valid number
+  if (typeof timestamp !== "number" || isNaN(timestamp) || timestamp <= 0) {
+    return timestamp;
+  }
+
   const timestampInMilliseconds = timestamp * 1000;
 
-  // Create a new Date object
   const date = new Date(timestampInMilliseconds);
 
-  // Extract date components
+  if (isNaN(date.getTime())) {
+    return timestamp;
+  }
+
   const year = date.getFullYear();
   const month = (date.getMonth() + 1).toString().padStart(2, "0"); // Months are zero-indexed
   const day = date.getDate().toString().padStart(2, "0");
@@ -281,7 +301,7 @@ const getDateTimeString = (timestamp) => {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`;
 };
 
-const base64toBlob = (data) => {
+const base64toBlob = (data, mimeType) => {
   const bytes = atob(data);
   let length = bytes.length;
   const out = new Uint8Array(length);
@@ -290,7 +310,7 @@ const base64toBlob = (data) => {
     out[length] = bytes.charCodeAt(length);
   }
 
-  return new Blob([out], { type: "application/pdf" });
+  return new Blob([out], { type: mimeType || "application/pdf" });
 };
 
 const removeFileExtension = (fileName) => {
@@ -319,12 +339,15 @@ const isJson = (text) => {
   }
 };
 
-const displayPromptResult = (output, isFormat = false) => {
+const displayPromptResult = (
+  output,
+  isFormat = false,
+  isHighlightEnabled = false
+) => {
   /*
     output: The data to be displayed or parsed
     isFormat: A flag indicating whether the output should be formatted
   */
-
   let i = 0;
   let parsedData = output;
 
@@ -346,9 +369,11 @@ const displayPromptResult = (output, isFormat = false) => {
   // Check if the parsed data is an array or object and formatting is requested
   if (Array.isArray(parsedData) || typeof parsedData === "object") {
     // If formatting is requested, return the JSON string with indentation
+    if (isHighlightEnabled) {
+      return parsedData;
+    }
     return JSON.stringify(parsedData, null, 4);
   }
-
   return String(parsedData);
 };
 
@@ -376,8 +401,25 @@ const formattedDateTime = (ISOdateTime) => {
 
 const getBackendErrorDetail = (attr, backendErrors) => {
   if (backendErrors) {
-    const error = backendErrors?.errors.find((error) => error?.attr === attr);
-    return error ? error?.detail : null;
+    // Handle structured error response with errors array
+    if (backendErrors?.errors && Array.isArray(backendErrors.errors)) {
+      const error = backendErrors.errors.find((error) => error?.attr === attr);
+      return error ? error?.detail : null;
+    }
+
+    // Handle direct field errors (e.g., { api_name: ["error message"] })
+    if (backendErrors[attr]) {
+      return Array.isArray(backendErrors[attr])
+        ? backendErrors[attr].join(", ")
+        : backendErrors[attr];
+    }
+
+    // Handle nested errors in non_field_errors
+    if (backendErrors?.non_field_errors) {
+      return Array.isArray(backendErrors.non_field_errors)
+        ? backendErrors.non_field_errors.join(", ")
+        : backendErrors.non_field_errors;
+    }
   }
   return null;
 };
@@ -544,8 +586,103 @@ const generateApiRunStatusId = (docId, profileId) => {
   return `${docId}__${profileId}`;
 };
 
+const base64toBlobWithMime = (data, mimeType) => {
+  // Converts a base64 encoded string to a Blob object with the specified MIME type.
+  const byteCharacters = atob(data?.data); // Decode base64
+  const byteArrays = [];
+
+  for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+    const slice = byteCharacters.slice(offset, offset + 512);
+    const byteNumbers = new Array(slice.length);
+    for (let i = 0; i < slice.length; i++) {
+      byteNumbers[i] = slice.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    byteArrays.push(byteArray);
+  }
+  return new Blob(byteArrays, { type: mimeType });
+};
+
 const generateCoverageKey = (promptId, profileId) => {
   return `coverage_${promptId}_${profileId}`;
+};
+
+function formatSecondsToHMS(seconds) {
+  if (isNaN(seconds) || seconds < 0) return "00:00:00";
+
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+
+  return [hrs, mins, secs]
+    .map((unit) => String(unit).padStart(2, "0"))
+    .join(":");
+}
+
+const formattedDateTimeWithSeconds = (ISOdateTime) => {
+  if (ISOdateTime) {
+    // eslint-disable-next-line new-cap
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const zonedDate = parseISO(ISOdateTime);
+    return format(zonedDate, "MMM d, yyyy h:mm:ss a zzz", { timeZone: zone });
+  } else {
+    return "";
+  }
+};
+
+const TRIAL_PLAN = "TRIAL";
+
+const homePagePath = cloudHomePagePath || "tools";
+
+const convertTimestampToHHMMSS = (timestamp) => {
+  // Convert the timestamp to milliseconds
+  const date = new Date(timestamp * 1000);
+
+  // Extract hours, minutes, and seconds
+  const [hours, minutes, seconds] = [
+    date.getUTCHours(),
+    date.getUTCMinutes(),
+    date.getUTCSeconds(),
+  ].map((unit) => unit.toString().padStart(2, "0"));
+  // Return the formatted time string
+  return `${hours}:${minutes}:${seconds}`;
+};
+
+const formatTimeDisplay = (seconds) => {
+  // Format time display for TTL or duration display
+  if (seconds <= 0) return "Expired";
+
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+
+  const parts = [];
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  if (secs > 0 || parts.length === 0) parts.push(`${secs}s`);
+
+  return parts.join(" ");
+};
+
+const UNSTRACT_ADMIN = "unstract_admin";
+
+const logsStaticContent = {
+  ETL: {
+    addBtn: "ETL Pipeline",
+    route: "etl",
+  },
+  TASK: {
+    addBtn: "Task Pipeline",
+    route: "task",
+  },
+  API: {
+    addBtn: "API Deployment",
+    route: "api",
+  },
+  WF: {
+    addBtn: "Workflow",
+    route: "workflows",
+  },
 };
 
 export {
@@ -597,5 +734,14 @@ export {
   PROMPT_RUN_TYPES,
   PROMPT_RUN_API_STATUSES,
   generateApiRunStatusId,
+  base64toBlobWithMime,
   generateCoverageKey,
+  TRIAL_PLAN,
+  homePagePath,
+  convertTimestampToHHMMSS,
+  UNSTRACT_ADMIN,
+  formatSecondsToHMS,
+  formatTimeDisplay,
+  formattedDateTimeWithSeconds,
+  logsStaticContent,
 };

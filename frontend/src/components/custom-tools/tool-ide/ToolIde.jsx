@@ -1,5 +1,4 @@
-import { FullscreenExitOutlined, FullscreenOutlined } from "@ant-design/icons";
-import { Col, Collapse, Modal, Row } from "antd";
+import { Col, Row } from "antd";
 import { useState, useEffect } from "react";
 
 import { useAxiosPrivate } from "../../../hooks/useAxiosPrivate";
@@ -7,29 +6,19 @@ import { useExceptionHandler } from "../../../hooks/useExceptionHandler";
 import { useAlertStore } from "../../../store/alert-store";
 import { useCustomToolStore } from "../../../store/custom-tool-store";
 import { useSessionStore } from "../../../store/session-store";
-import { DisplayLogs } from "../display-logs/DisplayLogs";
 import { DocumentManager } from "../document-manager/DocumentManager";
 import { Header } from "../header/Header";
-import { LogsLabel } from "../logs-label/LogsLabel";
 import { SettingsModal } from "../settings-modal/SettingsModal";
 import { ToolsMain } from "../tools-main/ToolsMain";
 import "./ToolIde.css";
 import usePostHogEvents from "../../../hooks/usePostHogEvents.js";
-let OnboardMessagesModal;
+import { PageTitle } from "../../widgets/page-title/PageTitle.jsx";
+
 let PromptShareModal;
 let PromptShareLink;
 let CloneTitle;
 let HeaderPublic;
-let slides;
-try {
-  OnboardMessagesModal =
-    require("../../../plugins/onboarding-messages/OnboardMessagesModal.jsx").OnboardMessagesModal;
-  slides =
-    require("../../../plugins/onboarding-messages/prompt-slides.jsx").PromptSlides;
-} catch (err) {
-  OnboardMessagesModal = null;
-  slides = [];
-}
+
 try {
   PromptShareModal =
     require("../../../plugins/prompt-studio-public-share/public-share-modal/PromptShareModal.jsx").PromptShareModal;
@@ -47,8 +36,6 @@ try {
   // Do nothing if plugins are not loaded.
 }
 function ToolIde() {
-  const [showLogsModal, setShowLogsModal] = useState(false);
-  const [activeKey, setActiveKey] = useState([]);
   const [openSettings, setOpenSettings] = useState(false);
   const {
     details,
@@ -62,24 +49,15 @@ function ToolIde() {
     isPublicSource,
   } = useCustomToolStore();
   const { sessionDetails } = useSessionStore();
-  const { promptOnboardingMessage } = sessionDetails;
   const { setAlertDetails } = useAlertStore();
   const axiosPrivate = useAxiosPrivate();
   const handleException = useExceptionHandler();
-  const [loginModalOpen, setLoginModalOpen] = useState(true);
   const { setPostHogCustomEvent } = usePostHogEvents();
   const [openShareLink, setOpenShareLink] = useState(false);
   const [openShareConfirmation, setOpenShareConfirmation] = useState(false);
   const [openShareModal, setOpenShareModal] = useState(false);
   const [openCloneModal, setOpenCloneModal] = useState(false);
 
-  const openLogsModal = () => {
-    setShowLogsModal(true);
-  };
-
-  const closeLogsModal = () => {
-    setShowLogsModal(false);
-  };
   useEffect(() => {
     if (openShareModal) {
       if (shareId) {
@@ -98,32 +76,6 @@ function ToolIde() {
       setOpenShareLink(false);
     }
   }, [openShareModal]);
-
-  const genExtra = () => (
-    <FullscreenOutlined
-      onClick={(event) => {
-        openLogsModal();
-        event.stopPropagation();
-      }}
-    />
-  );
-
-  const getItems = () => [
-    {
-      key: "1",
-      label: activeKey?.length > 0 ? <LogsLabel /> : "Logs",
-      children: (
-        <div className="tool-ide-logs">
-          <DisplayLogs />
-        </div>
-      ),
-      extra: genExtra(),
-    },
-  ];
-
-  const handleCollapse = (keys) => {
-    setActiveKey(keys);
-  };
 
   const generateIndex = async (doc) => {
     const docId = doc?.document_id;
@@ -216,17 +168,23 @@ function ToolIde() {
     const body = {
       output: doc?.document_id,
     };
-    handleUpdateTool(body).catch((err) => {
-      const revertSelectedDoc = {
-        selectedDoc: prevSelectedDoc,
-      };
-      updateCustomTool(revertSelectedDoc);
-      setAlertDetails(handleException(err, "Failed to select the document"));
-    });
+    handleUpdateTool(body)
+      .then((res) => {
+        const updatedToolData = res?.data;
+        updateCustomTool({ details: updatedToolData });
+      })
+      .catch((err) => {
+        const revertSelectedDoc = {
+          selectedDoc: prevSelectedDoc,
+        };
+        updateCustomTool(revertSelectedDoc);
+        setAlertDetails(handleException(err, "Failed to select the document"));
+      });
   };
 
   return (
     <div className="tool-ide-layout">
+      <PageTitle title={details?.tool_name} />
       {isPublicSource && HeaderPublic && <HeaderPublic />}
       <div>
         <Header
@@ -256,31 +214,9 @@ function ToolIde() {
               </div>
             </Col>
           </Row>
-          <div className="tool-ide-footer">
-            <Collapse
-              className="tool-ide-collapse-panel"
-              size="small"
-              activeKey={activeKey}
-              items={getItems()}
-              expandIconPosition="end"
-              onChange={handleCollapse}
-            />
-          </div>
-          <Modal
-            title={<LogsLabel />}
-            open={showLogsModal}
-            onCancel={closeLogsModal}
-            className="agency-ide-log-modal"
-            footer={null}
-            width={1400}
-            closeIcon={<FullscreenExitOutlined />}
-          >
-            <div className="agency-ide-logs">
-              <DisplayLogs />
-            </div>
-          </Modal>
         </div>
       </div>
+      <div className="height-50" />
       <SettingsModal
         open={openSettings}
         setOpen={setOpenSettings}
@@ -304,13 +240,6 @@ function ToolIde() {
         <CloneTitle
           open={openCloneModal}
           setOpenCloneModal={setOpenCloneModal}
-        />
-      )}
-      {!promptOnboardingMessage && OnboardMessagesModal && !isPublicSource && (
-        <OnboardMessagesModal
-          open={loginModalOpen}
-          setOpen={setLoginModalOpen}
-          slides={slides}
         />
       )}
     </div>

@@ -1,3 +1,6 @@
+from enum import Enum
+
+
 class AdapterKeys:
     JSON_SCHEMA = "json_schema"
     ADAPTER_TYPE = "adapter_type"
@@ -21,9 +24,19 @@ class AdapterKeys:
     X2TEXT_DEFAULT = "x2text_default"
     SHARED_USERS = "shared_users"
     ADAPTER_NAME_EXISTS = (
-        "Configuration with this name already exists within your organisation. "
+        "Configuration with this name already exists within your organisation."
         "Please try with a different name."
     )
     ADAPTER_NAME = "adapter_name"
     ADAPTER_CREATED_BY = "created_by_email"
     ADAPTER_CONTEXT_WINDOW_SIZE = "context_window_size"
+    PLATFORM_PROVIDED_UNSTRACT_KEY = "use_platform_provided_unstract_key"
+
+
+class AllowedDomains(Enum):
+    ZIPSTACK = "@zipstack.com"
+    UNSTRACT = "@unstract.com"
+
+    @staticmethod
+    def list():
+        return list(map(lambda c: c.value, AllowedDomains))

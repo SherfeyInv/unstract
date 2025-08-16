@@ -1,9 +1,18 @@
 import sys
-from typing import Any, Optional
+from typing import Any
 
-from helper import ClassifierHelper  # type: ignore
-from helper import ReservedBins
-from unstract.sdk.constants import LogLevel, LogState, MetadataKey, ToolSettingsKey
+from helper import (
+    ClassifierHelper,  # type: ignore
+    ReservedBins,
+)
+
+from unstract.sdk.constants import (
+    LogLevel,
+    LogState,
+    MetadataKey,
+    ToolSettingsKey,
+    UsageKwargs,
+)
 from unstract.sdk.exceptions import SdkError
 from unstract.sdk.llm import LLM
 from unstract.sdk.tool.base import BaseTool
@@ -15,7 +24,7 @@ class UnstractClassifier(BaseTool):
         super().__init__(log_level)
 
     def validate(self, input_file: str, settings: dict[str, Any]) -> None:
-        bins: Optional[list[str]] = settings.get("classificationBins")
+        bins: list[str] | None = settings.get("classificationBins")
         llm_adapter_instance_id = settings.get(ToolSettingsKey.LLM_ADAPTER_ID)
         text_extraction_adapter_id = settings.get("textExtractorId")
         if not bins:
@@ -54,7 +63,7 @@ class UnstractClassifier(BaseTool):
         self.stream_update(output_log, state=LogState.OUTPUT_UPDATE)
 
         self.stream_log(f"Reading file... {input_file}")
-        text: Optional[str] = self.helper.extract_text(
+        text: str | None = self.helper.extract_text(
             file=input_file,
             text_extraction_adapter_id=text_extraction_adapter_id,
         )
@@ -80,8 +89,10 @@ class UnstractClassifier(BaseTool):
         bins_with_quotes = [f"'{b}'" for b in bins]
 
         usage_kwargs: dict[Any, Any] = dict()
-        usage_kwargs["workflow_id"] = self.workflow_id
-        usage_kwargs["execution_id"] = self.execution_id
+        usage_kwargs[UsageKwargs.WORKFLOW_ID] = self.workflow_id
+        usage_kwargs[UsageKwargs.EXECUTION_ID] = self.execution_id
+        usage_kwargs[UsageKwargs.FILE_NAME] = self.source_file_name
+        usage_kwargs[UsageKwargs.RUN_ID] = self.file_execution_id
 
         try:
             llm = LLM(

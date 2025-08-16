@@ -1,13 +1,17 @@
 import { Button, ConfigProvider, notification, theme } from "antd";
 import { BrowserRouter } from "react-router-dom";
+import { HelmetProvider } from "react-helmet-async";
+import { useEffect } from "react";
 
 import { THEME } from "./helpers/GetStaticData.js";
 import { Router } from "./routes/Router.jsx";
 import { useAlertStore } from "./store/alert-store.js";
 import { useSessionStore } from "./store/session-store.js";
+import { GenericLoader } from "./components/generic-loader/GenericLoader";
 import PostHogPageviewTracker from "./PostHogPageviewTracker.js";
-import { useEffect } from "react";
+import { PageTitle } from "./components/widgets/page-title/PageTitle.jsx";
 import CustomMarkdown from "./components/helpers/custom-markdown/CustomMarkdown.jsx";
+import { useSocketLogsStore } from "./store/socket-logs-store.js";
 
 let GoogleTagManagerHelper;
 try {
@@ -20,8 +24,9 @@ try {
 function App() {
   const [notificationAPI, contextHolder] = notification.useNotification();
   const { defaultAlgorithm, darkAlgorithm } = theme;
-  const { sessionDetails } = useSessionStore();
+  const { sessionDetails, isLogoutLoading } = useSessionStore();
   const { alertDetails } = useAlertStore();
+  const { pushLogMessages } = useSocketLogsStore();
 
   const btn = (
     <>
@@ -53,6 +58,15 @@ function App() {
       btn,
       key: alertDetails?.key,
     });
+
+    pushLogMessages([
+      {
+        timestamp: Math.floor(Date.now() / 1000),
+        level: alertDetails?.type ? alertDetails?.type.toUpperCase() : "",
+        message: alertDetails.content,
+        type: "NOTIFICATION",
+      },
+    ]);
   }, [alertDetails]);
 
   return (
@@ -72,12 +86,20 @@ function App() {
         },
       }}
     >
-      <BrowserRouter>
-        <PostHogPageviewTracker />
-        {GoogleTagManagerHelper && <GoogleTagManagerHelper />}
-        {contextHolder}
-        <Router />
-      </BrowserRouter>
+      <HelmetProvider>
+        {isLogoutLoading && (
+          <div className="fullscreen-loader">
+            <GenericLoader />
+          </div>
+        )}
+        <BrowserRouter>
+          <PostHogPageviewTracker />
+          <PageTitle title={"Unstract"} />
+          {GoogleTagManagerHelper && <GoogleTagManagerHelper />}
+          {contextHolder}
+          <Router />
+        </BrowserRouter>
+      </HelmetProvider>
     </ConfigProvider>
   );
 }

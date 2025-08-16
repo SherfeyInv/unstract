@@ -2,7 +2,6 @@ import uuid
 from typing import Any
 
 from account_v2.models import User
-from api_v2.constants import ApiExecution
 from django.db import models
 from pipeline_v2.models import Pipeline
 from utils.models.base_model import BaseModel
@@ -12,6 +11,8 @@ from utils.models.organization_mixin import (
 )
 from utils.user_context import UserContext
 from workflow_manager.workflow_v2.models.workflow import Workflow
+
+from api_v2.constants import ApiExecution
 
 API_NAME_MAX_LENGTH = 30
 DESCRIPTION_MAX_LENGTH = 255
@@ -86,16 +87,20 @@ class APIDeployment(DefaultOrganizationMixin, BaseModel):
         return f"{self.id} - {self.display_name}"
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        """Save hook to update api_endpoint.
+        """Save hook to update api_endpoint and enforce constraints.
 
         Custom save hook for updating the 'api_endpoint' based on
-        'api_name'.     If the instance is being updated, it checks for
-        changes in 'api_name'         and adjusts 'api_endpoint'
-        accordingly.     If the instance is new, 'api_endpoint' is set
-        based on 'api_name'         and the current database schema.
+        'api_name'. If the instance is being updated, it checks for
+        changes in 'api_name' and adjusts 'api_endpoint'
+        accordingly. If the instance is new, 'api_endpoint' is set
+        based on 'api_name' and the current database schema.
+
+        Also enforces one API deployment per workflow constraint for new deployments.
         """
+        organization_id = UserContext.get_organization_identifier()
+
+        # Update api_endpoint logic
         if self.pk is not None:
-            organization_id = UserContext.get_organization_identifier()
             try:
                 original = APIDeployment.objects.get(pk=self.pk)
                 if original.api_name != self.api_name:
@@ -106,6 +111,10 @@ class APIDeployment(DefaultOrganizationMixin, BaseModel):
                 self.api_endpoint = (
                     f"{ApiExecution.PATH}/{organization_id}/{self.api_name}/"
                 )
+        else:
+            # New instance - set api_endpoint
+            self.api_endpoint = f"{ApiExecution.PATH}/{organization_id}/{self.api_name}/"
+
         super().save(*args, **kwargs)
 
     class Meta:

@@ -1,7 +1,8 @@
-from api_v2.api_deployment_views import APIDeploymentViewSet, DeploymentExecution
-from api_v2.api_key_views import APIKeyViewSet
 from django.urls import path
 from rest_framework.urlpatterns import format_suffix_patterns
+
+from api_v2.api_deployment_views import APIDeploymentViewSet, DeploymentExecution
+from api_v2.api_key_views import APIKeyViewSet
 
 deployment = APIDeploymentViewSet.as_view(
     {
@@ -20,6 +21,11 @@ deployment_details = APIDeploymentViewSet.as_view(
 download_postman_collection = APIDeploymentViewSet.as_view(
     {
         "get": APIDeploymentViewSet.download_postman_collection.__name__,
+    }
+)
+by_prompt_studio_tool = APIDeploymentViewSet.as_view(
+    {
+        "get": APIDeploymentViewSet.by_prompt_studio_tool.__name__,
     }
 )
 
@@ -46,6 +52,11 @@ urlpatterns = format_suffix_patterns(
             "deployment/<uuid:pk>/",
             deployment_details,
             name="api_deployment_details",
+        ),
+        path(
+            "deployment/by-prompt-studio-tool/",
+            by_prompt_studio_tool,
+            name="api_deployment_by_prompt_studio_tool",
         ),
         path(
             "postman_collection/<uuid:pk>/",

@@ -29,7 +29,7 @@ import {
 import { TokenUsage } from "../token-usage/TokenUsage";
 import { useWindowDimensions } from "../../../hooks/useWindowDimensions";
 import { useCustomToolStore } from "../../../store/custom-tool-store";
-import { TABLE_ENFORCE_TYPE, RECORD_ENFORCE_TYPE } from "./constants";
+import { TABLE } from "./constants";
 import { CopyPromptOutputBtn } from "./CopyPromptOutputBtn";
 import { useAlertStore } from "../../../store/alert-store";
 import { PromptOutputExpandBtn } from "./PromptOutputExpandBtn";
@@ -37,6 +37,7 @@ import { DisplayPromptResult } from "./DisplayPromptResult";
 import usePromptOutput from "../../../hooks/usePromptOutput";
 import { PromptRunTimer } from "./PromptRunTimer";
 import { PromptRunCost } from "./PromptRunCost";
+import { useState } from "react";
 
 let TableOutput;
 try {
@@ -64,10 +65,13 @@ function PromptOutput({
   isNotSingleLlmProfile,
   setIsIndexOpen,
   enforceType,
+  tableSettings,
   promptOutputs,
   promptRunStatus,
   isChallenge,
+  handleSelectHighlight,
 }) {
+  const [openExpandModal, setOpenExpandModal] = useState(false);
   const { width: windowWidth } = useWindowDimensions();
   const componentWidth = windowWidth * 0.4;
   const {
@@ -76,12 +80,13 @@ function PromptOutput({
     isSimplePromptStudio,
     isPublicSource,
     defaultLlmProfile,
+    selectedHighlight,
+    details,
   } = useCustomToolStore();
   const { setAlertDetails } = useAlertStore();
   const { generatePromptOutputKey } = usePromptOutput();
-  const isTableExtraction =
-    enforceType === TABLE_ENFORCE_TYPE || enforceType === RECORD_ENFORCE_TYPE;
-
+  const isTableExtraction = enforceType === TABLE;
+  const noHighlightEnforceType = !["table", "record"].includes(enforceType);
   const tooltipContent = (adapterConf) => (
     <div>
       {Object.entries(adapterConf)?.map(([key, value]) => (
@@ -98,6 +103,37 @@ function PromptOutput({
         ? [...prevState, profileId]
         : prevState.filter((id) => id !== profileId)
     );
+  };
+
+  const handleTable = (profileId, promptOutputData) => {
+    if (tableSettings?.document_type !== "rent_rolls")
+      return <TableOutput output={promptOutputData?.output} />;
+    else
+      return (
+        <>
+          <DisplayPromptResult
+            output={promptOutputData?.output}
+            profileId={profileId}
+            docId={selectedDoc?.document_id}
+            promptRunStatus={promptRunStatus}
+            handleSelectHighlight={handleSelectHighlight}
+            highlightData={promptOutputData?.highlightData}
+            confidenceData={promptOutputData?.confidenceData}
+            promptDetails={promptDetails}
+            isTable={true}
+            setOpenExpandModal={setOpenExpandModal}
+          />
+          <div className="prompt-profile-run">
+            <CopyPromptOutputBtn
+              copyToClipboard={() =>
+                copyOutputToClipboard(
+                  displayPromptResult(promptOutputData?.output, true)
+                )
+              }
+            />
+          </div>
+        </>
+      );
   };
 
   const getColSpan = () => (componentWidth < 1200 ? 24 : 6);
@@ -139,28 +175,69 @@ function PromptOutput({
 
     const promptOutput = promptOutputs[promptOutputKey]?.output;
 
+    let promptOutputData = {};
+    if (promptOutputs && Object.keys(promptOutputs)) {
+      const promptOutputKey = generatePromptOutputKey(
+        promptId,
+        docId,
+        defaultLlmProfile,
+        singlePassExtractMode,
+        true
+      );
+      if (promptOutputs[promptOutputKey] !== undefined) {
+        promptOutputData = promptOutputs[promptOutputKey];
+      }
+    }
+
     return (
       <>
         <Divider className="prompt-card-divider" />
-        <div className="prompt-card-result prompt-card-div">
-          <DisplayPromptResult output={promptOutput} />
+        <Space
+          wrap
+          className={`prompt-card-result prompt-card-div ${
+            details?.enable_highlight &&
+            noHighlightEnforceType &&
+            selectedHighlight?.highlightedPrompt === promptId &&
+            selectedHighlight?.highlightedProfile === defaultLlmProfile &&
+            "highlighted-prompt-cell"
+          }`}
+        >
+          <DisplayPromptResult
+            output={promptOutput}
+            highlightData={
+              promptOutputData?.highlightData?.[promptDetails.prompt_key]
+            }
+            handleSelectHighlight={handleSelectHighlight}
+            confidenceData={
+              promptOutputData?.confidenceData?.[promptDetails.prompt_key]
+            }
+          />
           <div className="prompt-profile-run">
             <CopyPromptOutputBtn
               isDisabled={isTableExtraction}
               copyToClipboard={() =>
-                copyOutputToClipboard(displayPromptResult(promptOutput, true))
+                copyOutputToClipboard(
+                  displayPromptResult(
+                    promptOutput,
+                    true,
+                    promptDetails?.enable_highlight
+                  )
+                )
               }
             />
             <PromptOutputExpandBtn
               promptId={promptDetails?.prompt_id}
               llmProfiles={llmProfileDetails}
               enforceType={enforceType}
+              tableSettings={tableSettings}
               displayLlmProfile={false}
               promptOutputs={promptOutputs}
               promptRunStatus={promptRunStatus}
+              openExpandModal={openExpandModal}
+              setOpenExpandModal={setOpenExpandModal}
             />
           </div>
-        </div>
+        </Space>
       </>
     );
   }
@@ -200,7 +277,13 @@ function PromptOutput({
                 x: profileId === selectedLlmProfileId && index !== 0 ? -10 : 0,
               }}
               transition={{ duration: 0.5, ease: "linear" }}
-              className="prompt-card-llm"
+              className={`prompt-card-llm ${
+                details?.enable_highlight &&
+                noHighlightEnforceType &&
+                selectedHighlight?.highlightedPrompt === promptId &&
+                selectedHighlight?.highlightedProfile === profileId &&
+                "highlighted-prompt-cell"
+              }`}
             >
               <Col
                 key={profileId}
@@ -208,7 +291,19 @@ function PromptOutput({
                 xs={{ span: getColSpan() }}
               >
                 <Divider className="prompt-card-divider" />
-                <Space direction="vertical" className="prompt-card-llm-layout">
+                <Space
+                  direction="vertical"
+                  className="prompt-card-llm-layout"
+                  onClick={() => {
+                    enforceType !== "json" &&
+                      handleSelectHighlight(
+                        promptOutputData?.highlightData,
+                        promptId,
+                        profileId,
+                        promptOutputData?.confidenceData
+                      );
+                  }}
+                >
                   <div className="llm-info">
                     <div className="llm-info-left">
                       <Image
@@ -347,9 +442,12 @@ function PromptOutput({
                         promptId={promptDetails?.prompt_id}
                         llmProfiles={llmProfileDetails}
                         enforceType={enforceType}
+                        tableSettings={tableSettings}
                         displayLlmProfile={true}
                         promptOutputs={promptOutputs}
                         promptRunStatus={promptRunStatus}
+                        openExpandModal={openExpandModal}
+                        setOpenExpandModal={setOpenExpandModal}
                       />
                     </div>
                   </div>
@@ -358,7 +456,7 @@ function PromptOutput({
                   <Divider className="prompt-card-divider" />
                   <div className="prompt-card-result prompt-card-div">
                     {isTableExtraction && TableOutput ? (
-                      <TableOutput output={promptOutputData?.output} />
+                      handleTable(profileId, promptOutputData)
                     ) : (
                       <>
                         <DisplayPromptResult
@@ -366,6 +464,10 @@ function PromptOutput({
                           profileId={profileId}
                           docId={selectedDoc?.document_id}
                           promptRunStatus={promptRunStatus}
+                          handleSelectHighlight={handleSelectHighlight}
+                          highlightData={promptOutputData?.highlightData}
+                          confidenceData={promptOutputData?.confidenceData}
+                          promptDetails={promptDetails}
                         />
                         <div className="prompt-profile-run">
                           <CopyPromptOutputBtn
@@ -404,9 +506,11 @@ PromptOutput.propTypes = {
   isNotSingleLlmProfile: PropTypes.bool.isRequired,
   setIsIndexOpen: PropTypes.func.isRequired,
   enforceType: PropTypes.string,
+  tableSettings: PropTypes.object.isRequired,
   promptOutputs: PropTypes.object.isRequired,
   promptRunStatus: PropTypes.object.isRequired,
   isChallenge: PropTypes.bool,
+  handleSelectHighlight: PropTypes.func.isRequired,
 };
 
 export { PromptOutput };

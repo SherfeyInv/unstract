@@ -42,7 +42,7 @@ class Usage(DefaultOrganizationMixin, BaseModel):
     adapter_instance_id = models.CharField(
         max_length=255, db_comment="Identifier for the adapter instance"
     )
-    run_id = models.CharField(
+    run_id = models.UUIDField(
         max_length=255, null=True, blank=True, db_comment="Identifier for the run"
     )
     usage_type = models.CharField(
@@ -61,9 +61,7 @@ class Usage(DefaultOrganizationMixin, BaseModel):
     embedding_tokens = models.IntegerField(
         db_comment="Number of tokens used for embedding"
     )
-    prompt_tokens = models.IntegerField(
-        db_comment="Number of tokens used for the prompt"
-    )
+    prompt_tokens = models.IntegerField(db_comment="Number of tokens used for the prompt")
     completion_tokens = models.IntegerField(
         db_comment="Number of tokens used for the completion"
     )
@@ -79,4 +77,5 @@ class Usage(DefaultOrganizationMixin, BaseModel):
         db_table = "usage"
         indexes = [
             models.Index(fields=["run_id"]),
+            models.Index(fields=["execution_id"]),
         ]

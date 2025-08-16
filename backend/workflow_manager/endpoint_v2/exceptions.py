@@ -1,5 +1,3 @@
-from typing import Optional
-
 from rest_framework.exceptions import APIException
 
 
@@ -9,9 +7,9 @@ class InvalidInputDirectory(APIException):
 
     def __init__(
         self,
-        dir: Optional[str] = None,
-        detail: Optional[str] = None,
-        code: Optional[str] = None,
+        dir: str | None = None,
+        detail: str | None = None,
+        code: str | None = None,
     ):
         if dir:
             detail = self.default_detail.replace("path", f"path '{dir}'")
@@ -73,14 +71,18 @@ class OrganizationIdNotFound(APIException):
 
 class InvalidToolOutputType(APIException):
     status_code = 500
-    default_detail = "Invalid output type is returned from tool"
+    default_detail = "Unsupported output type is returned from tool"
 
 
 class ToolOutputTypeMismatch(APIException):
-    status_code = 400
-    default_detail = (
-        "The data type of the tool's output does not match the expected type."
-    )
+    status_code = 500
+    default_detail = "The tool's output type does not match the expected type"
+
+    def __init__(self, detail: str | None = None, code: str | None = None):
+        detail += (
+            ". Please report this error to the administrator for further assistance."
+        )
+        super().__init__(detail, code)
 
 
 class BigQueryTableNotFound(APIException):
@@ -105,3 +107,13 @@ class UnstractQueueException(APIException):
     def __init__(self, detail: str = default_detail) -> None:
         status_code = 500
         super().__init__(detail=detail, code=status_code)
+
+
+class SourceFileOrInfilePathNotFound(APIException):
+    status_code = 500
+    default_detail = "Unable to obtain file (Source or Infile) for execution."
+
+
+class UnsupportedMimeTypeError(APIException):
+    status_code = 400
+    default_detail = "Unsupported MIME type."

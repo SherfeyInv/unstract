@@ -26,11 +26,6 @@ class ExecutionDoesNotExistError(APIException):
     default_detail = "Execution does not exist."
 
 
-class TaskDoesNotExistError(APIException):
-    status_code = 404
-    default_detail = "Task does not exist"
-
-
 class DuplicateActionError(APIException):
     status_code = 400
     default_detail = "Action is running"
@@ -59,3 +54,7 @@ class InternalException(APIException):
 class WorkflowExecutionNotExist(APIException):
     status_code = 404
     default_detail = "Workflow execution does not exist"
+
+
+class ExecutionContextInitializationError(APIException):
+    default_detail = "Error initializing execution context."

@@ -10,6 +10,9 @@ from connector_v2.models import ConnectorInstance
 from deprecated import deprecated
 from django.conf import settings
 from django.http import StreamingHttpResponse
+from fsspec import AbstractFileSystem
+from pydrive2.files import ApiRequestError
+
 from file_management.exceptions import (
     ConnectorApiRequestError,
     ConnectorClassNotFound,
@@ -22,9 +25,6 @@ from file_management.exceptions import (
     TenantDirCreationError,
 )
 from file_management.file_management_dto import FileInformation
-from fsspec import AbstractFileSystem
-from pydrive2.files import ApiRequestError
-
 from unstract.connectors.filesystems import connectors as fs_connectors
 from unstract.connectors.filesystems.unstract_file_system import UnstractFileSystem
 
@@ -32,11 +32,10 @@ logger = logging.getLogger(__name__)
 
 
 class FileManagerHelper:
-
     @staticmethod
     def get_file_system(connector: ConnectorInstance) -> UnstractFileSystem:
         """Creates the `UnstractFileSystem` for the corresponding connector."""
-        metadata = connector.metadata
+        metadata = connector.connector_metadata
         if connector.connector_id in fs_connectors:
             connector = fs_connectors[connector.connector_id]["metadata"]["connector"]
             connector_class: UnstractFileSystem = connector(metadata)
@@ -70,7 +69,8 @@ class FileManagerHelper:
     @staticmethod
     def get_files(fs: AbstractFileSystem, file_path: str) -> list[FileInformation]:
         """Iterate through the directories and make a list of
-        FileInformation."""
+        FileInformation.
+        """
         if not file_path.endswith("/"):
             file_path += "/"
 
@@ -139,12 +139,20 @@ class FileManagerHelper:
         # adding filename with path
         file_path += file_name
         with fs.open(file_path, mode="wb") as remote_file:
-            remote_file.write(file.read())
+            if isinstance(file, bytes):
+                remote_file.write(file)
+            else:
+                remote_file.write(file.read())
 
     @staticmethod
     @deprecated(reason="Use remote FS APIs from SDK")
-    def fetch_file_contents(file_system: UnstractFileSystem, file_path: str) -> Any:
+    def fetch_file_contents(
+        file_system: UnstractFileSystem,
+        file_path: str,
+        allowed_content_types: list[str],
+    ) -> Any:
         fs = file_system.get_fsspec_fs()
+
         try:
             file_info = fs.info(file_path)
         except FileNotFoundError:
@@ -152,8 +160,10 @@ class FileManagerHelper:
 
         file_content_type = file_info.get("ContentType")
         file_type = file_info.get("type")
+
         if file_type != "file":
             raise InvalidFileType
+
         try:
             if not file_content_type:
                 file_content_type, _ = mimetypes.guess_type(file_path)
@@ -165,19 +175,27 @@ class FileManagerHelper:
         except ApiRequestError as exception:
             logger.error(f"ApiRequestError from {file_info} {exception}")
             raise ConnectorApiRequestError
+
+        data = ""
+
+        # Handle allowed file types
         if file_content_type == "application/pdf":
-            # Read contents of PDF file into a string
             with fs.open(file_path, "rb") as file:
-                encoded_string = base64.b64encode(file.read())
-                return encoded_string
+                data = base64.b64encode(file.read())
 
         elif file_content_type == "text/plain":
             with fs.open(file_path, "r") as file:
                 logger.info(f"Reading text file: {file_path}")
-                text_content = file.read()
-                return text_content
+                data = file.read()
+
+        # Check if the file type is in the allowed list
+        elif file_content_type not in allowed_content_types:
+            raise InvalidFileType(f"File type '{file_content_type}' is not allowed.")
+
         else:
-            raise InvalidFileType
+            logger.warning(f"File type '{file_content_type}' is not handled.")
+
+        return {"data": data, "mime_type": file_content_type}
 
     @staticmethod
     def _delete_file(fs, file_path):

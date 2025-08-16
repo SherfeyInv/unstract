@@ -22,6 +22,8 @@ const PromptCard = memo(
     updatePlaceHolder,
     promptOutputs,
     enforceTypeList,
+    allTableSettings,
+    setAllTableSettings,
     setUpdatedPromptsCopy,
     handlePromptRunRequest,
     promptRunStatus,
@@ -43,8 +45,14 @@ const PromptCard = memo(
     const [openOutputForDoc, setOpenOutputForDoc] = useState(false);
     const [progressMsg, setProgressMsg] = useState({});
     const [spsLoading, setSpsLoading] = useState({});
-    const { llmProfiles, selectedDoc, details, summarizeIndexStatus } =
-      useCustomToolStore();
+    const {
+      llmProfiles,
+      selectedDoc,
+      details,
+      summarizeIndexStatus,
+      updateCustomTool,
+      singlePassExtractMode,
+    } = useCustomToolStore();
     const { messages } = useSocketCustomToolStore();
     const { setAlertDetails } = useAlertStore();
     const { setPostHogCustomEvent } = usePostHogEvents();
@@ -161,6 +169,72 @@ const PromptCard = memo(
       );
     };
 
+    const addCoordsToFlattened = (coords, flattened) => {
+      if (Array.isArray(coords)) {
+        flattened.push(coords);
+      }
+    };
+
+    const processNestedArray = (nestedValue, flattened) => {
+      if (Array.isArray(nestedValue)) {
+        nestedValue.forEach((coords) =>
+          addCoordsToFlattened(coords, flattened)
+        );
+      }
+    };
+
+    const processObjectValues = (item, flattened) => {
+      if (typeof item === "object" && !Array.isArray(item)) {
+        Object.values(item).forEach((value) =>
+          processNestedArray(value, flattened)
+        );
+      }
+    };
+
+    const processArrayItem = (item, flattened) => {
+      if (Array.isArray(item)) {
+        addCoordsToFlattened(item, flattened);
+      } else {
+        processObjectValues(item, flattened);
+      }
+    };
+
+    const flattenHighlightData = (data) => {
+      if (!data || typeof data !== "object") return data;
+
+      const flattened = [];
+      Object.values(data).forEach((value) => {
+        if (Array.isArray(value)) {
+          value.forEach((item) => processArrayItem(item, flattened));
+        }
+      });
+      return flattened;
+    };
+
+    const handleSelectHighlight = (
+      highlightData,
+      highlightedPrompt,
+      highlightedProfile,
+      confidenceData
+    ) => {
+      if (details?.enable_highlight) {
+        const processedHighlight =
+          singlePassExtractMode &&
+          typeof highlightData === "object" &&
+          !Array.isArray(highlightData)
+            ? flattenHighlightData(highlightData)
+            : highlightData;
+        updateCustomTool({
+          selectedHighlight: {
+            highlight: processedHighlight,
+            highlightedPrompt: highlightedPrompt,
+            highlightedProfile: highlightedProfile,
+            confidence: confidenceData,
+          },
+        });
+      }
+    };
+
     const handleTypeChange = (value) => {
       handleChange(value, promptDetailsState?.prompt_id, "enforce_type", true);
     };
@@ -240,7 +314,9 @@ const PromptCard = memo(
         <PromptCardItems
           promptDetails={promptDetailsState}
           enforceTypeList={enforceTypeList}
+          allTableSettings={allTableSettings}
           promptKey={promptKey}
+          setAllTableSettings={setAllTableSettings}
           setPromptKey={setPromptKey}
           promptText={promptText}
           setPromptText={setPromptText}
@@ -261,6 +337,7 @@ const PromptCard = memo(
           promptRunStatus={promptRunStatus}
           coverageCountData={coverageCountData}
           isChallenge={isChallenge}
+          handleSelectHighlight={handleSelectHighlight}
         />
         <OutputForDocModal
           open={openOutputForDoc}
@@ -283,6 +360,8 @@ PromptCard.propTypes = {
   updatePlaceHolder: PropTypes.string,
   promptOutputs: PropTypes.object.isRequired,
   enforceTypeList: PropTypes.array.isRequired,
+  allTableSettings: PropTypes.array.isRequired,
+  setAllTableSettings: PropTypes.func.isRequired,
   setUpdatedPromptsCopy: PropTypes.func.isRequired,
   handlePromptRunRequest: PropTypes.func.isRequired,
   promptRunStatus: PropTypes.object.isRequired,
