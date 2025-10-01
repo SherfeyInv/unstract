@@ -1,5 +1,5 @@
 # Use a specific version of Python slim image
-FROM python:3.12.9-slim AS base
+FROM python:3.14.0rc3-slim AS base
 
 ARG VERSION=dev
 LABEL maintainer="Zipstack Inc." \
