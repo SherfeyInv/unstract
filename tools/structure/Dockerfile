@@ -1,4 +1,4 @@
-FROM python:3.12.9-slim
+FROM python:3.14.2-slim
 
 LABEL maintainer="Zipstack Inc." \
       description="Structure Tool Container" \
