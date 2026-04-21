@@ -9,7 +9,7 @@ readme = "README.md"
 
 dependencies = [
     "peewee~=3.16",
-    "nltk~=3.8",
+    "nltk~=3.9",
     "flask~=3.0",
     "llama-index>=0.14.13",
     "python-dotenv==1.0.1",
